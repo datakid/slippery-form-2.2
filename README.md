@@ -45,7 +45,3 @@ js/main.js              wiring, commands, shortcuts, debug API
 ## Data model
 Stored in localStorage key `tally:v1`: `{ v, doc: { id, meta: { year, month, pharmacyId }, lines: [{ id, name, unit, qty, custom, context, addedAt, updatedAt }] }, prefs, archive, usage }`.
 Export columns: `year, month, class, region, pharmacyId, pharmacy, name, unit, unitSold, method, category`.
-
-## Not implemented / next steps
-- No server submission (the old Worker endpoint was removed on purpose; everything stays local).
-- Possible next steps: a month-over-month comparison from the archive, a PWA offline service worker, and bulk-select actions.
