@@ -1,0 +1,11 @@
+{
+  "name": "Tally — External tickets",
+  "short_name": "Tally",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F4F0E8",
+  "theme_color": "#C96442",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

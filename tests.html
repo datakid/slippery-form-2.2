@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tally — self tests</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/app.css">
+<style>
+#report { position: fixed; top: 0; right: 0; width: 420px; max-height: 100vh; overflow: auto; background: #111; color: #eee; font: 12px/1.5 ui-monospace, monospace; padding: 12px; z-index: 9999; }
+#report .ok { color: #7c7; } #report .fail { color: #f77; font-weight: bold; }
+</style>
+</head>
+<body data-theme="light">
+<div id="app" class="app"></div>
+<pre id="report"></pre>
+<script type="module">
+const BACKUP = {};
+for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); BACKUP[k] = localStorage.getItem(k); }
+localStorage.clear();
+const out = document.getElementById('report');
+const results = [];
+function check(name, cond, extra) {
+    results.push({ name, ok: !!cond });
+    const line = document.createElement('div');
+    line.className = cond ? 'ok' : 'fail';
+    line.textContent = (cond ? '✓ ' : '✗ ') + name + (extra !== undefined && !cond ? '  → ' + JSON.stringify(extra) : '');
+    out.appendChild(line);
+    console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra !== undefined && !cond ? ' :: ' + JSON.stringify(extra) : ''));
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function type(el, text) { el.focus(); el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); }
+function key(el, k, opts = {}) { el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts })); }
+
+const { parseOmni } = await import('./js/lib/omni.js');
+const { createIndex, search, searchWithLayoutFallback } = await import('./js/lib/search.js');
+const { PRODUCTS, findProduct } = await import('./js/data/catalog.js');
+const { parseCSVText } = await import('./js/services/importer.js');
+
+let p = parseOmni('metformin 500*20');
+check('omni qty *', p.kind === 'line' && p.name === 'metformin 500' && p.qty === 20, p);
+p = parseOmni('metformin 500 x 3');
+check('omni qty x', p.qty === 3 && p.name === 'metformin 500', p);
+p = parseOmni('amlodipine 10');
+check('omni bare trailing number stays in name', p.qty === null && p.name === 'amlodipine 10', p);
+p = parseOmni('+5');
+check('omni adjust +', p.kind === 'adjust' && p.delta === 5, p);
+p = parseOmni('-٣');
+check('omni adjust arabic digit', p.kind === 'adjust' && p.delta === -3, p);
+p = parseOmni('a21');
+check('omni pharmacy code', p.kind === 'pharmacy' && p.pharmacy.id === 'a21', p);
+p = parseOmni('!Foo drug @10 T #c *4');
+check('omni full ext', p.forceExt && p.name === 'Foo drug' && p.unit === '10 T' && p.context === 'قرار لجنة' && p.qty === 4, p);
+p = parseOmni('/pri');
+check('omni command', p.kind === 'command' && p.query === 'pri', p);
+
+const idx = createIndex(PRODUCTS, x => `${x.name} ${x.unit}`);
+let r = search(idx, 'metformin 500');
+check('search exact-ish top', r[0]?.item.name === 'Metformin 500mg', r.slice(0, 3).map(x => x.item.name));
+r = search(idx, 'metfromin');
+check('search typo tolerant', r.some(x => x.item.name.startsWith('Metformin')), r.slice(0, 3).map(x => x.item.name));
+r = search(idx, 'amlo 5');
+check('search token prefix', r[0]?.item.name.startsWith('Amlodipine 5mg'), r.slice(0, 3).map(x => x.item.name));
+const lay = searchWithLayoutFallback(idx, 'ةثفبخقةهى');
+check('arabic layout remap', lay.remapped === 'metformin' && lay.results[0]?.item.name.startsWith('Metformin'), { remapped: lay.remapped, top: lay.results[0]?.item.name });
+check('catalog dedupe Antacid Syp', PRODUCTS.filter(x => x.name === 'Antacid Syp').length === 1);
+check('unit normalized 10T→10 T', findProduct('Amlodipine 10mg', '10T')?.unit === '10 T');
+check('rivaroxaban typo fixed', PRODUCTS.some(x => x.name === 'Rivaroxaban 2.5mg') && !PRODUCTS.some(x => x.name.startsWith('Rivaroxban')));
+const csv = parseCSVText('\uFEFFname,unit,qty\n"Foo, bar",10 T,5\r\nBaz,B,"3"\n');
+check('csv parse quotes+crlf', csv.length === 3 && csv[1][0] === 'Foo, bar' && csv[2][2] === '3', csv);
+
+await import('./js/main.js');
+await wait(200);
+const T = globalThis.tally;
+check('app booted', !!T && !!document.querySelector('#composer-input'));
+
+const finder = document.getElementById('pharmacy-finder');
+type(finder, 'b26');
+await wait(30);
+key(finder, 'Enter');
+await wait(60);
+check('pharmacy via finder code', T.state().doc.meta.pharmacyId === 'b26', T.state().doc.meta);
+check('setup closes when complete', document.getElementById('setup-panel').hidden === true);
+
+const input = document.getElementById('composer-input');
+const qty = document.getElementById('composer-qty');
+type(input, 'metformin 500');
+await wait(80);
+check('results open', !document.getElementById('composer-results').hidden);
+key(input, 'Enter');
+await wait(30);
+check('selection moves focus to qty', document.activeElement === qty);
+type(qty, '12');
+key(qty, 'Enter');
+await wait(40);
+let lines = T.state().doc.lines;
+check('line added', lines.length === 1 && lines[0].name === 'Metformin 500mg' && lines[0].qty === 12, lines);
+check('focus back to search', document.activeElement === input);
+
+type(input, 'metformin 500*8');
+await wait(80);
+key(input, 'Enter');
+await wait(40);
+lines = T.state().doc.lines;
+check('one-shot merges (add mode)', lines.length === 1 && lines[0].qty === 20, lines.map(l => [l.name, l.qty]));
+
+type(input, '+5');
+key(input, 'Enter');
+await wait(30);
+check('+5 adjusts last', T.state().doc.lines[0].qty === 25, T.state().doc.lines[0].qty);
+
+type(input, '-30');
+key(input, 'Enter');
+await wait(30);
+check('adjust clamps at 0', T.state().doc.lines[0].qty === 0);
+
+T.undo();
+await wait(20);
+check('undo restores 25', T.state().doc.lines[0].qty === 25, T.state().doc.lines[0].qty);
+T.redo();
+await wait(20);
+check('redo back to 0', T.state().doc.lines[0].qty === 0);
+T.undo();
+
+type(input, '!Special cream @Tube #j *2');
+await wait(60);
+key(input, 'Enter');
+await wait(40);
+lines = T.state().doc.lines;
+const ext = lines.find(l => l.custom);
+check('custom one-shot', ext && ext.name === 'Special cream' && ext.unit === 'Tube' && ext.context === 'حكم قضائي' && ext.qty === 2, ext);
+
+type(input, 'zzqx mystery');
+await wait(80);
+key(input, 'Enter');
+await wait(40);
+check('unknown → custom flow opens', !document.querySelector('.composer-custom').hidden);
+const unit = document.getElementById('custom-unit');
+type(unit, '10 T');
+document.querySelectorAll('.ctx-seg .seg')[2].click();
+type(qty, '7');
+key(qty, 'Enter');
+await wait(40);
+const myst = T.state().doc.lines.find(l => l.name === 'zzqx mystery');
+check('custom via guided flow', myst && myst.unit === '10 T' && myst.context === 'شئون طبية' && myst.qty === 7, myst);
+
+type(input, 'unlisted thing');
+await wait(80);
+key(input, 'Enter');
+type(qty, '1');
+key(qty, 'Enter');
+await wait(40);
+check('custom without context allowed, flagged', T.state().doc.lines.some(l => l.name === 'unlisted thing' && !l.context));
+check('context alert visible', !document.querySelector('.context-alert').hidden);
+
+const row = document.querySelector(`.ledger-row[data-id="${T.state().doc.lines.find(l => l.name === 'Metformin 500mg').id}"]`);
+const cell = row.querySelector('.qty-cell');
+cell.focus(); cell.value = '40'; cell.dispatchEvent(new Event('input', { bubbles: true }));
+key(cell, 'Enter');
+await wait(40);
+check('inline qty edit', T.state().doc.lines.find(l => l.name === 'Metformin 500mg').qty === 40);
+
+type(input, 'a21');
+key(input, 'Enter');
+await wait(40);
+check('code in composer switches pharmacy', T.state().doc.meta.pharmacyId === 'a21');
+
+const rows = T.rows();
+check('export rows shape', rows.length === 4 && rows.every(x => x.pharmacyId === 'a21' && x.month && x.year), rows[0]);
+const csvText = T.csv();
+check('csv has BOM + header', csvText.startsWith('\uFEFFyear,month,class,region,pharmacyId,pharmacy,name,unit,unitSold,method,category'));
+
+T.dispatch({ type: 'UI_SET', payload: { view: 'catalog' } });
+await wait(120);
+check('full list visible', !document.getElementById('catalog').hidden && document.querySelectorAll('.catalog-row').length === PRODUCTS.length);
+const metRow = [...document.querySelectorAll('.catalog-row')].find(li => li.querySelector('.row-name').textContent === 'Metformin 500mg');
+check('full list shows existing qty', metRow?.querySelector('.qty-cell').value === '40');
+const firstRow = document.querySelector('.catalog-row');
+const fc = firstRow.querySelector('.qty-cell');
+fc.focus(); fc.value = '3'; fc.dispatchEvent(new Event('input', { bubbles: true }));
+key(fc, 'Enter');
+await wait(40);
+check('full list add', T.state().doc.lines.length === 5);
+check('full list Enter moves down', document.activeElement === firstRow.nextElementSibling.querySelector('.qty-cell'));
+fc.focus(); fc.value = ''; fc.dispatchEvent(new Event('input', { bubbles: true }));
+fc.blur();
+await wait(40);
+check('full list empty removes', T.state().doc.lines.length === 4);
+T.dispatch({ type: 'UI_SET', payload: { view: 'ledger' } });
+await wait(60);
+
+await wait(400);
+const saved = JSON.parse(localStorage.getItem('tally:v1'));
+check('persisted to localStorage', saved && saved.doc.lines.length === 4);
+
+T.dispatch({ type: 'PREFS_SET', payload: { lang: 'ar' } });
+await wait(60);
+check('rtl applied', document.documentElement.dir === 'rtl' && document.getElementById('composer-input').placeholder.includes('أضف'));
+T.dispatch({ type: 'PREFS_SET', payload: { lang: 'en' } });
+
+const XLSX = await T.loadXLSX();
+check('xlsx lib loads lazily', !!XLSX?.utils);
+
+const failed = results.filter(r => !r.ok).length;
+const sum = document.createElement('div');
+sum.className = failed ? 'fail' : 'ok';
+sum.textContent = `\n${results.length - failed}/${results.length} passed`;
+out.prepend(sum);
+console.log(`SUMMARY ${results.length - failed}/${results.length} passed`);
+document.title = failed ? 'FAIL' : 'PASS';
+await wait(500);
+localStorage.clear();
+for (const [k, v] of Object.entries(BACKUP)) localStorage.setItem(k, v);
+console.log('restored user storage');
+</script>
+</body>
+</html>

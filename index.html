@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4f0e8">
+<meta name="description" content="Tally — fast, friendly monthly external-ticket reports. Works offline, saves on your device.">
+<title>Tally — External tickets</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="favicon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<script>
+(function () {
+    try {
+        var saved = JSON.parse(localStorage.getItem('tally:v1') || 'null');
+        var prefs = (saved && saved.prefs) || {};
+        var theme = prefs.theme || localStorage.getItem('app-theme') || 'system';
+        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        if (prefs.lang === 'ar') { document.documentElement.lang = 'ar'; document.documentElement.dir = 'rtl'; }
+    } catch (e) {
+        document.documentElement.dataset.theme = 'light';
+    }
+})();
+</script>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/print.css" media="print">
+</head>
+<body>
+<div id="app" class="app">
+    <noscript>Tally needs JavaScript to run.</noscript>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

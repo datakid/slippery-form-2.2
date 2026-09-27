@@ -1,0 +1,26 @@
+@page { size: A4; margin: 14mm 12mm; }
+
+html, body { background: #fff !important; color: #000 !important; }
+body { font-family: 'IBM Plex Sans Arabic', 'Inter', sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+.topbar, .stage, .dock, .toast-host, .menu, dialog { display: none !important; }
+
+.print-sheet { display: block !important; font-size: 12.5pt; }
+.print-head { border: 1.5px solid #000; padding: 10pt 14pt; margin-bottom: 12pt; }
+.print-head p { margin: 3pt 0; font-size: 13pt; font-weight: 600; }
+
+.print-table { width: 100%; border-collapse: collapse; }
+.print-table thead { display: table-header-group; }
+.print-table tfoot { display: table-row-group; }
+.print-table th, .print-table td { border: 1px solid #555; padding: 5pt 7pt; text-align: right; vertical-align: middle; }
+.print-table th { background: #eee !important; font-weight: 700; font-size: 11.5pt; }
+.print-table tr { break-inside: avoid; }
+.print-table .c-n { width: 28pt; text-align: center; color: #333; }
+.print-table .c-u { width: 64pt; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 10.5pt; }
+.print-table .c-q { width: 78pt; text-align: center; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.print-table .c-name { text-align: left; font-family: 'Inter', sans-serif; font-size: 11pt; }
+.print-table tfoot td { background: #f2f2f2 !important; font-weight: 700; }
+
+.print-foot { margin-top: 18pt; border-top: 1.5px solid #000; padding-top: 10pt; break-inside: avoid; }
+.print-foot p { margin: 0 0 26pt; }
+.print-sign { display: flex; justify-content: space-between; font-weight: 700; font-size: 12.5pt; }

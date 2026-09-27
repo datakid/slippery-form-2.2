@@ -1,0 +1,237 @@
+const STRINGS = {
+    en: {
+        appName: 'Tally',
+        appTag: 'External tickets',
+        undo: 'Undo', redo: 'Redo', undone: l => `Undone: ${l}`, redone: l => `Redone: ${l}`, nothingToUndo: 'Nothing to undo',
+        theme: 'Theme', themeSystem: 'System', themeLight: 'Light', themeDark: 'Dark',
+        language: 'العربية', help: 'Shortcuts & tips', more: 'More',
+        setupTitle: 'Where and when?',
+        setupHint: 'Pick the pharmacy and month this report is for. Type a code like a21 to jump straight there.',
+        pharmacyFinder: 'Pharmacy code or name',
+        pharmacyFinderPh: 'e.g. a21 or دمنهور',
+        allClasses: 'All', class: 'Class', region: 'Region', pharmacy: 'Pharmacy', month: 'Month', year: 'Year',
+        noPharmacyMatch: 'No pharmacy matches that.',
+        change: 'Change', done: 'Done',
+        reportFor: 'Report', notSet: 'Not set',
+        composerPh: 'Add a medicine — type a name',
+        composerPhQty: 'Qty',
+        add: 'Add', addLine: 'Add line',
+        qty: 'Qty', unit: 'Unit', unitPh: 'e.g. 10 T', context: 'Context', newItem: 'New item',
+        addAsNew: q => `Add “${q}” as a new item`,
+        addAsNewHint: 'Not on the list — needs a unit and context',
+        commands: 'Commands',
+        layoutFixed: q => `Typed on the Arabic layout? Showing results for “${q}”`,
+        inReport: 'in report',
+        frequent: 'Frequent here',
+        lines: n => n === 1 ? '1 line' : `${n} lines`,
+        units: n => `${n.toLocaleString('en')} units`,
+        emptyTitle: 'Nothing logged yet',
+        emptyHint: 'Start typing a medicine name above. Press Enter to pick, type the quantity, Enter again.',
+        emptyTip: 'Tip — power users can type metformin 500*20 and hit Enter.',
+        filterPh: 'Filter lines',
+        sortRecent: 'Recent', sortName: 'A–Z', sortQty: 'Qty',
+        viewLines: 'My lines', viewCatalog: 'Full list',
+        catalogHint: 'Type quantities straight into the list. Enter or ↓ moves down, ↑ moves up. Empty removes the line.',
+        needsContext: n => n === 1 ? '1 new item needs a context' : `${n} new items need a context`,
+        showOnly: 'Show only these', showAll: 'Show all',
+        pickContext: 'Pick context',
+        remove: 'Remove', removed: n => `Removed ${n}`,
+        added: (n, q) => `Added ${n} × ${q}`,
+        mergedAdd: (n, a, b) => `${n}: ${a} → ${b}`,
+        adjusted: (n, a, b) => `${n}: ${a} → ${b}`,
+        noLastLine: 'No line to adjust yet — add one first.',
+        qtyRequired: 'Type a quantity above zero.',
+        pharmacySet: n => `Pharmacy set: ${n}`,
+        movedReport: n => `Report moved to ${n}`,
+        prev: n => `last ${n}`,
+        print: 'Print', export: 'Export', exportCsv: 'CSV spreadsheet', exportXlsx: 'Excel workbook',
+        exportCsvHint: 'Opens anywhere', exportXlsxHint: 'Formatted, with summary sheet',
+        finish: 'Finish', finishTitle: 'Finish this report?',
+        finishBody: 'It will be exported and saved to your local archive. Then a fresh report starts — just pick the next pharmacy.',
+        finishExport: 'Export as', finishConfirm: 'Finish & export',
+        finished: 'Report archived. Fresh start!',
+        missingMeta: 'Choose the pharmacy and month first.',
+        missingLines: 'The report is empty.',
+        fixContext: 'Some new items still need a context.',
+        fixZero: 'Some lines have zero quantity.',
+        exported: f => `Saved ${f}`,
+        exportFailed: 'Export failed — see console for details.',
+        loadingXlsx: 'Preparing Excel…',
+        clearReport: 'Clear report', clearTitle: 'Clear all lines?', clearBody: n => `This removes ${n} from the current report. You can undo right after.`,
+        cleared: n => `Cleared ${n}`, nothingToClear: 'Nothing to clear.',
+        archive: 'Archive', archiveEmpty: 'Finished reports will appear here. They live only in this browser.',
+        open: 'Open', delete: 'Delete', openTitle: 'Open this report?', openBody: 'Your current lines will be replaced. You can undo.',
+        opened: 'Report opened from archive.',
+        importFile: 'Import spreadsheet', importTitle: 'Import CSV or Excel',
+        importHint: 'Columns we understand: name, unit, qty (or units sold), context. Extra columns are ignored.',
+        importDrop: 'Drop a file here or click to choose', importAccepted: '.csv, .xlsx, .xls',
+        importReview: 'Review import', matched: 'Matched', suggested: 'Suggested', custom: 'New items', skipped: 'Skipped',
+        accept: 'Accept', keepNew: 'Keep as new', importAdd: n => `Add ${n}`, imported: n => `Imported ${n}`,
+        importNothing: 'Nothing usable in that file.', importFailed: 'Could not read that file.',
+        cancel: 'Cancel', confirm: 'Confirm', close: 'Close',
+        savedLocally: 'Saved on this device', saveFailed: 'Storage is full — export soon!',
+        migrated: 'Picked up your report from the previous app.',
+        shortcuts: 'Shortcuts',
+        tipsTitle: 'Fast entry',
+        tips: [
+            ['metformin 500', 'Search — typos and Arabic keyboard layout are forgiven'],
+            ['Enter', 'Pick the highlighted result, then type qty and Enter'],
+            ['metformin 500*20', 'Add in one go (also x20 or =20)'],
+            ['+5  /  -5', 'Adjust the last touched line'],
+            ['a21', 'Switch pharmacy by code'],
+            ['!name @10 T #c *3', 'New item with unit, context and qty'],
+            ['#c #j #m #l', 'Committee · Court · Medical · In list'],
+            ['/', 'Commands — print, export, full list…']
+        ],
+        keysTitle: 'Keys',
+        keys: [
+            [['/'], 'Focus the add bar'],
+            [['↑', '↓'], 'Move through results'],
+            [['Esc'], 'Back / clear'],
+            [['Ctrl', 'Z'], 'Undo'],
+            [['Ctrl', 'Shift', 'Z'], 'Redo'],
+            [['Ctrl', 'P'], 'Print'],
+            [['Ctrl', 'E'], 'Export'],
+            [['?'], 'This sheet']
+        ],
+        cmd: {
+            print: 'Print report', csv: 'Export CSV', xlsx: 'Export Excel', finish: 'Finish report',
+            full: 'Toggle full list', clear: 'Clear report', theme: 'Cycle theme', lang: 'Switch language',
+            archive: 'Open archive', import: 'Import spreadsheet', help: 'Shortcuts & tips', setup: 'Change pharmacy / month'
+        },
+        total: 'Total',
+        items: n => `${n} items`
+    },
+    ar: {
+        appName: 'تالي',
+        appTag: 'تذاكر الخارجي',
+        undo: 'تراجع', redo: 'إعادة', undone: l => `تم التراجع: ${l}`, redone: l => `تمت الإعادة: ${l}`, nothingToUndo: 'لا يوجد ما يُتراجع عنه',
+        theme: 'المظهر', themeSystem: 'النظام', themeLight: 'فاتح', themeDark: 'داكن',
+        language: 'English', help: 'الاختصارات والنصائح', more: 'المزيد',
+        setupTitle: 'أين ومتى؟',
+        setupHint: 'اختر الصيدلية والشهر لهذا البيان. اكتب كودًا مثل a21 للانتقال مباشرة.',
+        pharmacyFinder: 'كود أو اسم الصيدلية',
+        pharmacyFinderPh: 'مثال: a21 أو دمنهور',
+        allClasses: 'الكل', class: 'الموازنة', region: 'المنطقة', pharmacy: 'الصيدلية', month: 'الشهر', year: 'السنة',
+        noPharmacyMatch: 'لا توجد صيدلية مطابقة.',
+        change: 'تغيير', done: 'تم',
+        reportFor: 'البيان', notSet: 'غير محدد',
+        composerPh: 'أضف صنفًا — اكتب الاسم',
+        composerPhQty: 'الكمية',
+        add: 'إضافة', addLine: 'إضافة سطر',
+        qty: 'الكمية', unit: 'العبوة', unitPh: 'مثال: 10 T', context: 'السياق', newItem: 'صنف جديد',
+        addAsNew: q => `إضافة «${q}» كصنف جديد`,
+        addAsNewHint: 'غير موجود في القائمة — يحتاج عبوة وسياق',
+        commands: 'الأوامر',
+        layoutFixed: q => `هل كتبت بلوحة المفاتيح العربية؟ نتائج «${q}»`,
+        inReport: 'في البيان',
+        frequent: 'متكرر هنا',
+        lines: n => `${n} سطر`,
+        units: n => `${n.toLocaleString('en')} وحدة`,
+        emptyTitle: 'لا توجد أسطر بعد',
+        emptyHint: 'ابدأ بكتابة اسم الصنف بالأعلى. Enter للاختيار، اكتب الكمية، ثم Enter مرة أخرى.',
+        emptyTip: 'نصيحة — يمكنك كتابة metformin 500*20 ثم Enter مباشرة.',
+        filterPh: 'تصفية الأسطر',
+        sortRecent: 'الأحدث', sortName: 'أ–ي', sortQty: 'الكمية',
+        viewLines: 'أسطري', viewCatalog: 'القائمة الكاملة',
+        catalogHint: 'اكتب الكميات مباشرة. Enter أو ↓ للأسفل، ↑ للأعلى. الحقل الفارغ يحذف السطر.',
+        needsContext: n => `${n} صنف جديد يحتاج سياقًا`,
+        showOnly: 'عرضها فقط', showAll: 'عرض الكل',
+        pickContext: 'اختر السياق',
+        remove: 'حذف', removed: n => `تم حذف ${n}`,
+        added: (n, q) => `تمت إضافة ${n} × ${q}`,
+        mergedAdd: (n, a, b) => `${n}: ${a} ← ${b}`,
+        adjusted: (n, a, b) => `${n}: ${a} ← ${b}`,
+        noLastLine: 'لا يوجد سطر لتعديله بعد.',
+        qtyRequired: 'اكتب كمية أكبر من صفر.',
+        pharmacySet: n => `الصيدلية: ${n}`,
+        movedReport: n => `تم نقل البيان إلى ${n}`,
+        prev: n => `السابق ${n}`,
+        print: 'طباعة', export: 'تصدير', exportCsv: 'ملف CSV', exportXlsx: 'ملف Excel',
+        exportCsvHint: 'يفتح في أي برنامج', exportXlsxHint: 'منسق مع ورقة ملخص',
+        finish: 'إنهاء', finishTitle: 'إنهاء هذا البيان؟',
+        finishBody: 'سيُصدَّر ويُحفظ في الأرشيف المحلي، ثم يبدأ بيان جديد — فقط اختر الصيدلية التالية.',
+        finishExport: 'التصدير كـ', finishConfirm: 'إنهاء وتصدير',
+        finished: 'تمت الأرشفة. بداية جديدة!',
+        missingMeta: 'اختر الصيدلية والشهر أولًا.',
+        missingLines: 'البيان فارغ.',
+        fixContext: 'بعض الأصناف الجديدة تحتاج سياقًا.',
+        fixZero: 'بعض الأسطر كميتها صفر.',
+        exported: f => `تم حفظ ${f}`,
+        exportFailed: 'فشل التصدير.',
+        loadingXlsx: 'جارٍ تجهيز Excel…',
+        clearReport: 'مسح البيان', clearTitle: 'مسح كل الأسطر؟', clearBody: n => `سيتم حذف ${n} من البيان الحالي. يمكنك التراجع فورًا.`,
+        cleared: n => `تم مسح ${n}`, nothingToClear: 'لا يوجد ما يُمسح.',
+        archive: 'الأرشيف', archiveEmpty: 'البيانات المنتهية تظهر هنا، وتُحفظ في هذا المتصفح فقط.',
+        open: 'فتح', delete: 'حذف', openTitle: 'فتح هذا البيان؟', openBody: 'ستُستبدل الأسطر الحالية. يمكنك التراجع.',
+        opened: 'تم فتح البيان من الأرشيف.',
+        importFile: 'استيراد ملف', importTitle: 'استيراد CSV أو Excel',
+        importHint: 'الأعمدة المفهومة: name، unit، qty (أو units sold)، context. يتم تجاهل الباقي.',
+        importDrop: 'أفلت الملف هنا أو اضغط للاختيار', importAccepted: '.csv, .xlsx, .xls',
+        importReview: 'مراجعة الاستيراد', matched: 'مطابق', suggested: 'مقترح', custom: 'أصناف جديدة', skipped: 'متجاهل',
+        accept: 'قبول', keepNew: 'إبقاء كجديد', importAdd: n => `إضافة ${n}`, imported: n => `تم استيراد ${n}`,
+        importNothing: 'لا يوجد ما يمكن استخدامه في الملف.', importFailed: 'تعذرت قراءة الملف.',
+        cancel: 'إلغاء', confirm: 'تأكيد', close: 'إغلاق',
+        savedLocally: 'محفوظ على هذا الجهاز', saveFailed: 'التخزين ممتلئ — صدّر قريبًا!',
+        migrated: 'تم استرجاع بيانك من التطبيق السابق.',
+        shortcuts: 'الاختصارات',
+        tipsTitle: 'إدخال سريع',
+        tips: [
+            ['metformin 500', 'بحث — يتسامح مع الأخطاء ولوحة المفاتيح العربية'],
+            ['Enter', 'اختر النتيجة، ثم اكتب الكمية و Enter'],
+            ['metformin 500*20', 'إضافة مباشرة (أو x20 أو =20)'],
+            ['+5  /  -5', 'تعديل آخر سطر'],
+            ['a21', 'تغيير الصيدلية بالكود'],
+            ['!name @10 T #c *3', 'صنف جديد بعبوة وسياق وكمية'],
+            ['#c #j #m #l', 'لجنة · حكم · شئون طبية · داخل اللستة'],
+            ['/', 'الأوامر — طباعة، تصدير، القائمة الكاملة…']
+        ],
+        keysTitle: 'المفاتيح',
+        keys: [
+            [['/'], 'التركيز على شريط الإضافة'],
+            [['↑', '↓'], 'التنقل بين النتائج'],
+            [['Esc'], 'رجوع / مسح'],
+            [['Ctrl', 'Z'], 'تراجع'],
+            [['Ctrl', 'Shift', 'Z'], 'إعادة'],
+            [['Ctrl', 'P'], 'طباعة'],
+            [['Ctrl', 'E'], 'تصدير'],
+            [['?'], 'هذه النافذة']
+        ],
+        cmd: {
+            print: 'طباعة البيان', csv: 'تصدير CSV', xlsx: 'تصدير Excel', finish: 'إنهاء البيان',
+            full: 'القائمة الكاملة', clear: 'مسح البيان', theme: 'تغيير المظهر', lang: 'تغيير اللغة',
+            archive: 'فتح الأرشيف', import: 'استيراد ملف', help: 'الاختصارات', setup: 'تغيير الصيدلية / الشهر'
+        },
+        total: 'الإجمالي',
+        items: n => `${n} صنف`
+    }
+};
+
+let lang = 'en';
+
+export function setLang(next) {
+    lang = STRINGS[next] ? next : 'en';
+    const root = document.documentElement;
+    root.lang = lang;
+    root.dir = lang === 'ar' ? 'rtl' : 'ltr';
+}
+
+export function getLang() { return lang; }
+
+export function t(key, ...args) {
+    const path = key.split('.');
+    let v = STRINGS[lang];
+    let fb = STRINGS.en;
+    for (const p of path) { v = v?.[p]; fb = fb?.[p]; }
+    const entry = v ?? fb;
+    if (entry == null) {
+        console.warn('[i18n] missing key', key);
+        return key;
+    }
+    return typeof entry === 'function' ? entry(...args) : entry;
+}
+
+export function label(entity) {
+    if (!entity) return '';
+    return lang === 'ar' ? (entity.ar ?? entity.en) : (entity.en ?? entity.ar);
+}
