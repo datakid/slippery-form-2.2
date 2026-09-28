@@ -2,6 +2,7 @@ import { h, icon, clear } from '../lib/dom.js';
 import { t } from '../i18n.js';
 import { CONTEXTS } from '../data/catalog.js';
 import { visibleLines, totals } from '../core/selectors.js';
+import { lineKey } from '../core/state.js';
 import { parseQty } from '../lib/text.js';
 import { openMenu } from './overlay.js';
 
@@ -37,6 +38,7 @@ export function createLedger({ store, actions }) {
     const alertBar = h('div', { class: 'context-alert', hidden: true });
     const list = h('ol', { class: 'ledger-list', id: 'ledger-list' });
     const empty = h('div', { class: 'empty-state', id: 'ledger-empty' });
+    const noMatch = h('div', { class: 'no-match', id: 'ledger-no-match', hidden: true });
     const summary = h('div', { class: 'ledger-summary' });
     const tools = h('div', { class: 'ledger-tools' },
         h('label', { class: 'filter-wrap' }, icon('search', 16), filterInput),
@@ -44,22 +46,39 @@ export function createLedger({ store, actions }) {
     );
     const root = h('section', { class: 'ledger card', id: 'ledger', 'aria-label': t('viewLines') },
         h('header', { class: 'ledger-head' }, summary, tools),
-        alertBar, list, empty
+        alertBar, list, noMatch, empty
     );
 
     const rows = new Map();
+    let skipBlurCommit = false;
 
     function contextButton(line) {
         const btn = h('button', {
             class: 'ctx-pill' + (line.context ? '' : ' is-missing'), type: 'button', 'aria-haspopup': 'menu',
-            dataset: { focusKey: line.id + ':ctx' }
+            dataset: { focusKey: line.id + ':ctx' }, title: t('pickContext')
         }, icon(line.context ? 'tag' : 'alert', 13), h('span', { dir: line.context ? 'rtl' : null }, line.context || t('pickContext')));
         btn.addEventListener('click', () => {
+            const cur = findLine(line.id) || line;
             openMenu(btn, CONTEXTS.map((c, i) => ({
-                label: c.id, hint: `${c.en} · #${c.key}`, checked: line.context === c.id,
+                label: c.id, hint: `${c.en} · #${c.key}`, checked: cur.context === c.id,
                 kbd: String(i + 1),
-                run: () => store.dispatch({ type: 'LINE_UPDATE', payload: { id: line.id, patch: { context: c.id } } })
+                run: () => {
+                    const twin = store.getState().doc.lines.find(l => l.id !== cur.id && l.custom && l.context === c.id && lineKey(l) === lineKey({ ...cur, context: c.id }));
+                    if (twin) {
+                        store.dispatch({ type: 'LINES_MERGE', payload: { from: cur.id, into: twin.id } });
+                        actions.notify(t('mergedAdd', cur.name, twin.qty, twin.qty + cur.qty), 'neutral');
+                    } else {
+                        store.dispatch({ type: 'LINE_UPDATE', payload: { id: cur.id, patch: { context: c.id } } });
+                    }
+                    if (store.getState().ui.onlyNeedsContext) requestAnimationFrame(() => { if (!focusIssue('context')) actions.focusComposer(); });
+                }
             })), { align: 'start' });
+        });
+        btn.addEventListener('keydown', e => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                const back = (e.key === 'ArrowLeft') !== (document.documentElement.dir === 'rtl');
+                if (back) { e.preventDefault(); btn.closest('.ledger-row')?._qty.focus(); }
+            }
         });
         return btn;
     }
@@ -70,20 +89,37 @@ export function createLedger({ store, actions }) {
         const li = h('li', { class: 'ledger-row', dataset: { id: line.id } });
         li._qty = qty;
         li._remove = remove;
-        remove.addEventListener('click', () => actions.removeLine(line.id));
+        remove.addEventListener('click', () => {
+            const next = li.nextElementSibling || li.previousElementSibling;
+            actions.removeLine(li.dataset.id);
+            if (next?._qty && next.isConnected) next._qty.focus({ preventScroll: true });
+            else actions.focusComposer();
+        });
         qty.addEventListener('input', () => sanitizeDigits(qty));
         qty.addEventListener('focus', () => { qty.select(); li.classList.add('is-focus'); });
-        qty.addEventListener('blur', () => { li.classList.remove('is-focus'); commitQty(li); });
+        qty.addEventListener('blur', () => { li.classList.remove('is-focus'); if (!skipBlurCommit) commitQty(li); });
         qty.addEventListener('keydown', e => {
+            if (e.isComposing) return;
             if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
+                const order = [...list.children];
+                const at = order.indexOf(li);
                 commitQty(li);
-                moveFocus(li.dataset.id, e.key === 'ArrowUp' ? -1 : 1);
+                moveFocus(e.key === 'ArrowUp' ? -1 : 1, order, at);
             } else if (e.key === 'Escape') {
                 e.preventDefault(); e.stopPropagation();
                 const cur = findLine(li.dataset.id);
-                qty.value = cur ? String(cur.qty) : '';
-                qty.blur();
+                qty.value = cur && cur.qty ? String(cur.qty) : '';
+                skipBlurCommit = true;
+                actions.focusComposer();
+                skipBlurCommit = false;
+            } else if ((e.key === 'Delete' && (e.ctrlKey || e.metaKey || !qty.value)) || (e.key === 'Backspace' && (e.ctrlKey || e.metaKey))) {
+                e.preventDefault();
+                remove.click();
+            } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                const fwd = (e.key === 'ArrowRight') !== (document.documentElement.dir === 'rtl');
+                const ctx = li.querySelector('.ctx-pill');
+                if (fwd && ctx && qty.selectionStart === qty.value.length && qty.selectionEnd === qty.value.length) { e.preventDefault(); ctx.focus(); }
             }
         });
         paint(li, line);
@@ -119,18 +155,31 @@ export function createLedger({ store, actions }) {
         const line = findLine(li.dataset.id);
         if (!line) return;
         const v = parseQty(li._qty.value);
-        if (v === null) { li._qty.value = String(line.qty); return; }
-        if (v === line.qty) return;
+        if (v === null || v === line.qty) { li._qty.value = line.qty ? String(line.qty) : ''; return; }
         if (v === 0) { actions.removeLine(line.id); return; }
         store.dispatch({ type: 'LINE_UPDATE', payload: { id: line.id, patch: { qty: v } }, meta: { group: 'qty:' + line.id } });
     }
 
-    function moveFocus(id, dir) {
-        const order = [...list.children];
-        const i = order.findIndex(el => el.dataset.id === id);
-        const next = order[i + dir];
-        if (next) next._qty.focus();
-        else if (dir < 0 || i === order.length - 1) actions.focusComposer();
+    function moveFocus(dir, order, at) {
+        const alive = el => el && el.parentNode === list;
+        let i = at + dir;
+        while (i >= 0 && i < order.length && !alive(order[i])) i += dir;
+        const next = order[i];
+        if (alive(next)) { next._qty.focus(); next.scrollIntoView({ block: 'nearest' }); return; }
+        actions.focusComposer();
+    }
+
+    function focusIssue(kind) {
+        const target = [...list.children].find(li => {
+            const l = li._line;
+            if (!l) return false;
+            return kind === 'context' ? l.custom && !l.context : !(l.qty > 0);
+        });
+        if (!target) return false;
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const el = kind === 'context' ? target.querySelector('.ctx-pill') : target._qty;
+        el?.focus({ preventScroll: true });
+        return true;
     }
 
     function renderAlert(s) {
@@ -182,10 +231,20 @@ export function createLedger({ store, actions }) {
         if (!same) list.replaceChildren(...frag);
 
         const hasLines = s.doc.lines.length > 0;
+        const filteredOut = hasLines && !vis.length;
         empty.hidden = hasLines;
-        list.hidden = !hasLines;
+        list.hidden = !hasLines || filteredOut;
+        noMatch.hidden = !filteredOut;
         tools.hidden = !hasLines;
         root.classList.toggle('is-empty', !hasLines);
+        if (filterInput.value !== s.ui.filter && document.activeElement !== filterInput) filterInput.value = s.ui.filter;
+        if (filteredOut) {
+            clear(noMatch).append(
+                icon('search', 16),
+                h('span', null, t('noLineMatch', s.ui.filter)),
+                h('button', { class: 'link-btn', type: 'button', onclick: clearFilter }, t('clearFilter'))
+            );
+        }
         if (!hasLines) {
             clear(empty).append(
                 h('div', { class: 'empty-art', 'aria-hidden': 'true' }, h('span'), h('span'), h('span')),
@@ -199,10 +258,23 @@ export function createLedger({ store, actions }) {
         restoreFocus(root, snap);
     }
 
+    function clearFilter() {
+        filterInput.value = '';
+        store.dispatch({ type: 'UI_SET', payload: { filter: '' } });
+        filterInput.focus();
+    }
+
     filterInput.addEventListener('input', () => store.dispatch({ type: 'UI_SET', payload: { filter: filterInput.value } }));
     filterInput.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && filterInput.value) { e.preventDefault(); e.stopPropagation(); filterInput.value = ''; store.dispatch({ type: 'UI_SET', payload: { filter: '' } }); }
-        if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); list.firstElementChild?._qty.focus(); }
+        if (e.isComposing) return;
+        if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            if (filterInput.value) clearFilter();
+            else actions.focusComposer();
+        } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+            e.preventDefault();
+            if (!list.hidden) list.firstElementChild?._qty.focus();
+        }
     });
     sortBtn.addEventListener('click', () => {
         const cur = store.getState().prefs.sort;
@@ -221,10 +293,18 @@ export function createLedger({ store, actions }) {
         el: root,
         render() {
             filterInput.placeholder = t('filterPh');
+            filterInput.setAttribute('aria-label', t('filterPh'));
+            root.setAttribute('aria-label', t('viewLines'));
             rows.forEach(li => li.remove());
             rows.clear();
             render();
         },
-        focusFirst() { list.firstElementChild?._qty.focus(); }
+        focusFirst() {
+            const first = list.hidden ? null : list.firstElementChild;
+            if (!first) return false;
+            first._qty.focus();
+            return true;
+        },
+        focusIssue
     };
 }

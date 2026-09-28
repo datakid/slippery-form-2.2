@@ -13,13 +13,15 @@ export function createCatalogView({ store, actions }) {
     const onlyFilled = h('button', { class: 'pill-btn', type: 'button', 'aria-pressed': 'false' }, icon('check', 15), h('span'));
     const hint = h('p', { class: 'catalog-hint' });
     const list = h('ol', { class: 'catalog-list', id: 'catalog-list' });
+    const noMatch = h('p', { class: 'no-match', hidden: true });
     const root = h('section', { class: 'catalog card', id: 'catalog', hidden: true },
         h('header', { class: 'catalog-head' },
             h('label', { class: 'filter-wrap grow' }, icon('search', 16), filter),
             onlyFilled
         ),
         hint,
-        list
+        list,
+        noMatch
     );
 
     const rowByKey = new Map();
@@ -60,12 +62,23 @@ export function createCatalogView({ store, actions }) {
             input.addEventListener('focus', () => { input.select(); li.classList.add('is-focus'); });
             input.addEventListener('blur', () => { li.classList.remove('is-focus'); commit(li); });
             input.addEventListener('keydown', e => {
+                if (e.isComposing) return;
                 if (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
+                    const vis = visibleRows();
+                    const at = vis.indexOf(li);
                     commit(li);
-                    move(li, e.key === 'ArrowUp' ? -1 : 1);
+                    move(vis, at, e.key === 'ArrowUp' ? -1 : 1);
+                } else if (e.key === 'PageDown' || e.key === 'PageUp') {
+                    e.preventDefault();
+                    const vis = visibleRows();
+                    const at = vis.indexOf(li);
+                    commit(li);
+                    move(vis, at, e.key === 'PageUp' ? -10 : 10, true);
                 } else if (e.key === 'Escape') {
                     e.preventDefault(); e.stopPropagation();
+                    const existing = qtyMap().get(key);
+                    input.value = existing ? String(existing.qty) : '';
                     filter.focus(); filter.select();
                 }
             });
@@ -86,17 +99,17 @@ export function createCatalogView({ store, actions }) {
         if (existing && v === existing.qty) return;
         if (!existing && v === 0) return;
         if (v === 0) { store.dispatch({ type: 'LINE_REMOVE', payload: { id: existing.id } }); return; }
-        if (existing) store.dispatch({ type: 'LINE_UPDATE', payload: { id: existing.id, patch: { qty: v } } });
+        if (existing) store.dispatch({ type: 'LINE_UPDATE', payload: { id: existing.id, patch: { qty: v } }, meta: { group: 'cat:' + existing.id } });
         else actions.addLine(makeLine({ name: p.name, unit: p.unit, qty: v, custom: false }), p.key, { mode: 'replace', silent: true });
     }
 
     function visibleRows() { return [...list.children].filter(li => !li.hidden); }
 
-    function move(li, dir) {
-        const vis = visibleRows();
-        const i = vis.indexOf(li);
-        const next = vis[i + dir];
-        if (next) { next._input.focus(); next.scrollIntoView({ block: 'nearest' }); }
+    function move(vis, i, dir, clamp) {
+        let target = i + dir;
+        if (clamp) target = Math.max(0, Math.min(vis.length - 1, target));
+        const next = vis[target];
+        if (next && next.isConnected && !next.hidden) { next._input.focus(); next.scrollIntoView({ block: 'nearest' }); }
         else if (dir < 0) filter.focus();
     }
 
@@ -105,10 +118,15 @@ export function createCatalogView({ store, actions }) {
         const m = qtyMap();
         let allowed = null;
         if (q) allowed = new Set(search(index, q, { limit: 400 }).map(r => 'p:' + productKey(r.item.name, r.item.unit)));
+        let shown = 0;
         for (const [key, li] of rowByKey) {
             li.hidden = (allowed && !allowed.has(key)) || (showFilled && !m.has(key));
+            if (!li.hidden) shown++;
         }
         list.classList.toggle('is-filtered', Boolean(q) || showFilled);
+        list.hidden = shown === 0;
+        noMatch.hidden = shown !== 0;
+        if (!shown) noMatch.textContent = showFilled && !q ? t('catalogNoneFilled') : t('noLineMatch', q);
     }
 
     function sync() {
@@ -124,6 +142,7 @@ export function createCatalogView({ store, actions }) {
 
     filter.addEventListener('input', applyFilter);
     filter.addEventListener('keydown', e => {
+        if (e.isComposing) return;
         if (e.key === 'ArrowDown' || e.key === 'Enter') {
             e.preventDefault();
             const first = visibleRows()[0];
@@ -145,7 +164,9 @@ export function createCatalogView({ store, actions }) {
     return {
         el: root,
         render() {
-            filter.placeholder = t('filterPh');
+            filter.placeholder = t('catalogFilterPh');
+            filter.setAttribute('aria-label', t('catalogFilterPh'));
+            root.setAttribute('aria-label', t('viewCatalog'));
             hint.textContent = t('catalogHint');
             onlyFilled.querySelector('span').textContent = t('inReport');
         },
@@ -156,6 +177,11 @@ export function createCatalogView({ store, actions }) {
             applyFilter();
             requestAnimationFrame(() => filter.focus());
         },
-        hide() { root.hidden = true; }
+        hide() {
+            const a = document.activeElement;
+            if (a && root.contains(a)) a.blur();
+            root.hidden = true;
+        },
+        focusFilter() { if (!root.hidden) filter.focus(); }
     };
 }

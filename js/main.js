@@ -16,14 +16,37 @@ import { openHelp, openImport, openArchive, openFinish } from './ui/dialogs.js';
 import { debounce } from './lib/text.js';
 import { PRODUCTS, PHARMACIES } from './data/catalog.js';
 
+const THEMES = ['system', 'light', 'dark'];
+const SORTS = ['recent', 'name', 'qty'];
+
+function sanitizeDoc(doc) {
+    if (!doc || typeof doc !== 'object') return null;
+    const meta = doc.meta && typeof doc.meta === 'object' ? { ...doc.meta } : {};
+    if (!Number.isInteger(meta.year)) meta.year = parseInt(meta.year, 10) || new Date().getFullYear();
+    const lines = (Array.isArray(doc.lines) ? doc.lines : [])
+        .filter(l => l && typeof l.name === 'string' && l.name.trim())
+        .map(l => ({ ...l, qty: Math.max(0, Math.floor(Number(l.qty) || 0)), unit: String(l.unit || ''), addedAt: l.addedAt || Date.now() }));
+    return { ...doc, id: doc.id || emptyDoc().id, meta, lines };
+}
+
+function sanitizePrefs(prefs) {
+    const out = { ...prefs };
+    if (!THEMES.includes(out.theme)) out.theme = 'system';
+    if (!SORTS.includes(out.sort)) out.sort = 'recent';
+    if (out.lang !== 'ar') out.lang = 'en';
+    return out;
+}
+
 function boot() {
     const base = initialState();
     const loaded = storage.load();
     const legacyPrefs = storage.readLegacyPrefs();
-    if (loaded.data?.doc) base.doc = loaded.data.doc;
+    const doc = sanitizeDoc(loaded.data?.doc);
+    if (doc) base.doc = doc;
     if (loaded.data?.prefs) base.prefs = { ...base.prefs, ...loaded.data.prefs };
     else base.prefs = { ...base.prefs, ...Object.fromEntries(Object.entries(legacyPrefs).filter(([, v]) => v)) };
-    if (Array.isArray(loaded.data?.archive)) base.archive = loaded.data.archive;
+    base.prefs = sanitizePrefs(base.prefs);
+    if (Array.isArray(loaded.data?.archive)) base.archive = loaded.data.archive.filter(a => a && a.id && a.doc).map(a => ({ ...a, doc: sanitizeDoc(a.doc) }));
     if (loaded.data?.usage && typeof loaded.data.usage === 'object') base.usage = loaded.data.usage;
     if (!base.doc.meta.month) base.doc.meta.month = suggestedMonth();
     return { state: base, migrated: loaded.migrated };
@@ -36,10 +59,13 @@ setLang(bootState.prefs.lang);
 let saveState = { ok: true, at: null };
 const persistNow = () => {
     const r = storage.persist(store.getState());
+    const wasOk = saveState.ok;
     saveState = { ok: r.ok, at: r.savedAt || saveState.at };
+    if (r.ok) lastWritten = storage.raw();
     renderSaveStatus();
-    if (!r.ok) toast(t('saveFailed'), { tone: 'danger', duration: 8000 });
+    if (!r.ok && wasOk) toast(t('saveFailed'), { tone: 'danger', duration: 8000 });
 };
+let lastWritten = null;
 const persistSoon = debounce(persistNow, 250);
 
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
@@ -54,17 +80,38 @@ darkQuery.addEventListener('change', applyTheme);
 
 function notify(msg, tone = 'neutral', opts = {}) { return toast(msg, { tone, ...opts }); }
 
-const undoAction = () => ({ label: t('undo'), run: () => doUndo() });
+function commit(action) {
+    const before = store.getState();
+    store.dispatch(action);
+    return store.getState() !== before;
+}
 
-function doUndo() {
+function undoAction() {
+    const head = store.head();
+    return { label: t('undo'), run: () => { if (store.head() === head) doUndo(true); } };
+}
+
+function historyLabel(type) {
+    const map = t('history');
+    return (map && map[type]) || type;
+}
+
+function doUndo(quiet) {
     const l = store.undo();
     if (!l) notify(t('nothingToUndo'));
+    else if (!quiet) notify(t('undone', historyLabel(l)), 'neutral', { duration: 1800 });
 }
-function doRedo() { store.redo(); }
+function doRedo() {
+    const l = store.redo();
+    if (l) notify(t('redone', historyLabel(l)), 'neutral', { duration: 1800 });
+}
 
 const actions = {
     notify,
+    undoAction: () => undoAction(),
     focusComposer: () => composer.focus(),
+    focusLedger: () => ledger.focusFirst(),
+    showLedger: () => { if (store.getState().ui.view !== 'ledger') setView('ledger'); },
     addLine(line, usageKey, opts = {}) {
         const action = { type: 'LINE_ADD', payload: { line, mode: opts.mode } };
         store.dispatch(action);
@@ -82,27 +129,37 @@ const actions = {
         notify(t('removed', line.name.split(' (')[0]), 'neutral', { action: undoAction() });
     },
     adjustLast(delta) {
-        const s = store.getState();
-        const line = s.doc.lines.find(l => l.id === s.ui.lastLineId);
-        if (!line) { notify(t('noLastLine'), 'danger'); return; }
+        const line = actions.lastLine();
+        if (!line) { notify(t('noLastLine'), 'danger'); return false; }
         const to = Math.max(0, line.qty + delta);
-        store.dispatch({ type: 'LINE_UPDATE', payload: { id: line.id, patch: { qty: to } } });
-        notify(t('adjusted', line.name.split(' (')[0], line.qty, to), 'neutral', { action: undoAction() });
+        if (!commit({ type: 'LINE_UPDATE', payload: { id: line.id, patch: { qty: to } } })) {
+            notify(t('adjustNoop', line.name.split(' (')[0], line.qty));
+            return false;
+        }
+        notify(t('adjusted', line.name.split(' (')[0], line.qty, to), to ? 'neutral' : 'danger', { action: undoAction() });
+        return true;
+    },
+    lastLine() {
+        const s = store.getState();
+        return s.doc.lines.find(l => l.id === s.ui.lastLineId) || null;
     },
     setPharmacy(p) {
         const had = store.getState().doc.lines.length > 0;
-        store.dispatch({ type: 'META_SET', payload: { pharmacyId: p.id } });
-        notify(had ? t('movedReport', p.name) : t('pharmacySet', p.name), 'success', { action: undoAction() });
-        setupOpen = false;
+        if (commit({ type: 'META_SET', payload: { pharmacyId: p.id } })) {
+            notify(had ? t('movedReport', p.name) : t('pharmacySet', p.name), 'success', { action: undoAction() });
+        } else notify(t('pharmacyAlready', p.name));
+        setupOpen = !metaInfo(store.getState().doc.meta).complete;
         renderShell();
     },
     openArchived(entry) {
         store.dispatch({ type: 'DOC_REPLACE', payload: { doc: structuredClone(entry.doc) } });
-        store.dispatch({ type: 'ARCHIVE_REMOVE', payload: { id: entry.id } });
+        store.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: false, view: 'ledger' } });
         notify(t('opened'), 'success', { action: undoAction() });
         setupOpen = false;
         renderShell();
-    }
+        composer.focus();
+    },
+    currentDocId: () => store.getState().doc.id
 };
 
 async function runExport(format) {
@@ -126,10 +183,18 @@ async function runExport(format) {
 }
 
 function explainIssues(list) {
-    if (list.includes('pharmacy') || list.includes('month')) { setupOpen = true; renderShell(); setup.focus(); return t('missingMeta'); }
-    if (list.includes('empty')) return t('missingLines');
-    if (list.includes('context')) { store.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: true, view: 'ledger' } }); return t('fixContext'); }
-    if (list.includes('zero')) return t('fixZero');
+    if (list.includes('pharmacy') || list.includes('month')) { setupOpen = true; renderShell(); setup.syncFromMeta(); setup.focus(); return t('missingMeta'); }
+    if (list.includes('empty')) { setView('ledger'); composer.focus(); return t('missingLines'); }
+    if (list.includes('context')) {
+        store.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: true, view: 'ledger', filter: '' } });
+        requestAnimationFrame(() => ledger.focusIssue('context'));
+        return t('fixContext');
+    }
+    if (list.includes('zero')) {
+        store.dispatch({ type: 'UI_SET', payload: { view: 'ledger', filter: '' } });
+        requestAnimationFrame(() => ledger.focusIssue('zero'));
+        return t('fixZero');
+    }
     return null;
 }
 
@@ -144,7 +209,7 @@ async function finishReport() {
     store.dispatch({ type: 'ARCHIVE_ADD', payload: { entry: { id: s.doc.id, finishedAt: Date.now(), file: name, doc: s.doc } } });
     store.dispatch({ type: 'DOC_REPLACE', payload: { doc: emptyDoc({ ...s.doc.meta, pharmacyId: null }) } });
     store.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: false, view: 'ledger' } });
-    notify(t('finished'), 'success', { duration: 5000 });
+    notify(t('finished'), 'success', { duration: 5000, action: undoAction() });
     setupOpen = true;
     renderShell();
     setup.syncFromMeta();
@@ -155,6 +220,7 @@ function printReport() {
     const s = store.getState();
     if (!s.doc.lines.length) { notify(t('missingLines'), 'danger'); return; }
     if (!metaInfo(s.doc.meta).complete) { notify(explainIssues(['pharmacy']), 'danger'); return; }
+    closeMenu();
     printer.print(s.doc);
 }
 
@@ -164,13 +230,16 @@ async function clearReport() {
     const ok = await confirmSheet({ title: t('clearTitle'), body: t('clearBody', t('lines', n)), confirmLabel: t('clearReport'), tone: 'danger' });
     if (!ok) return;
     store.dispatch({ type: 'DOC_CLEAR' });
+    store.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: false, filter: '' } });
     notify(t('cleared', t('lines', n)), 'neutral', { action: undoAction() });
+    composer.focus();
 }
 
 function cycleTheme() {
-    const order = ['system', 'light', 'dark'];
     const cur = store.getState().prefs.theme;
-    store.dispatch({ type: 'PREFS_SET', payload: { theme: order[(order.indexOf(cur) + 1) % 3] } });
+    const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+    store.dispatch({ type: 'PREFS_SET', payload: { theme: next } });
+    notify(`${t('theme')}: ${t('theme' + next[0].toUpperCase() + next.slice(1))}`, 'neutral', { duration: 1600 });
 }
 
 function toggleLang() {
@@ -179,15 +248,33 @@ function toggleLang() {
 
 function setView(view) {
     store.dispatch({ type: 'UI_SET', payload: { view } });
+    if (view === 'ledger' && store.getState().ui.view === 'ledger') renderShell();
+}
+
+function openSetup() {
+    setupOpen = true;
+    renderShell();
+    setup.syncFromMeta();
+    setup.focus();
+}
+
+function closeSetup() {
+    if (!metaInfo(store.getState().doc.meta).complete) return false;
+    setupOpen = false;
+    renderShell();
+    composer.focus();
+    return true;
 }
 
 const commands = () => [
     { id: 'print', icon: 'print', label: () => t('cmd.print'), kbd: 'Ctrl P', run: printReport },
     { id: 'xlsx', icon: 'sheet', label: () => t('cmd.xlsx'), run: () => runExport('xlsx') },
     { id: 'csv', icon: 'file', label: () => t('cmd.csv'), run: () => runExport('csv') },
-    { id: 'finish', icon: 'check', label: () => t('cmd.finish'), run: finishReport },
+    { id: 'finish', icon: 'check', label: () => t('cmd.finish'), kbd: 'Ctrl ↵', run: finishReport },
     { id: 'full', icon: 'list', label: () => t('cmd.full'), run: () => setView(store.getState().ui.view === 'catalog' ? 'ledger' : 'catalog') },
-    { id: 'setup', icon: 'store', label: () => t('cmd.setup'), run: () => { setupOpen = true; renderShell(); setup.syncFromMeta(); setup.focus(); } },
+    { id: 'setup', icon: 'store', label: () => t('cmd.setup'), run: openSetup },
+    { id: 'undo', icon: 'undo', label: () => t('undo'), kbd: 'Ctrl Z', run: () => doUndo() },
+    { id: 'redo', icon: 'redo', label: () => t('redo'), kbd: 'Ctrl Shift Z', run: doRedo },
     { id: 'import', icon: 'upload', label: () => t('cmd.import'), run: () => openImport({ store, actions }) },
     { id: 'archive', icon: 'archive', label: () => t('cmd.archive'), run: () => openArchive({ store, actions }) },
     { id: 'clear', icon: 'trash', label: () => t('cmd.clear'), run: clearReport },
@@ -198,19 +285,24 @@ const commands = () => [
 
 let setupOpen = !metaInfo(store.getState().doc.meta).complete;
 
-const setup = createSetup({ store, onComplete: () => { if (setupOpen) { setupOpen = false; renderShell(); composer.focus(); } } });
+const setup = createSetup({
+    store,
+    onComplete: () => { if (setupOpen) closeSetup(); },
+    onDismiss: () => closeSetup(),
+    onPick: (p, before) => { if (before && store.getState().doc.lines.length) notify(t('movedReport', p.name), 'success', { action: undoAction() }); }
+});
 const composer = createComposer({ store, commands, actions });
 const ledger = createLedger({ store, actions });
 const catalog = createCatalogView({ store, actions });
 const printer = createPrintSheet();
 
 const brand = h('a', { class: 'brand', href: './', 'aria-label': 'Tally' },
-    h('img', { class: 'brand-mark', src: 'favicon.svg', alt: '', width: 30, height: 30 }),
+    h('img', { class: 'brand-mark', src: 'images/icon.jpg', alt: '', width: 30, height: 30 }),
     h('span', { class: 'brand-text' }, h('strong', { class: 'brand-name' }), h('small', { class: 'brand-tag' }))
 );
 const reportPill = h('button', { class: 'report-pill', id: 'report-pill', type: 'button', 'aria-controls': 'setup-panel' });
-const undoBtn = h('button', { class: 'icon-btn', type: 'button', id: 'undo-btn', onclick: doUndo }, icon('undo', 18));
-const redoBtn = h('button', { class: 'icon-btn', type: 'button', id: 'redo-btn', onclick: doRedo }, icon('redo', 18));
+const undoBtn = h('button', { class: 'icon-btn', type: 'button', id: 'undo-btn', onclick: () => doUndo() }, icon('undo', 18));
+const redoBtn = h('button', { class: 'icon-btn', type: 'button', id: 'redo-btn', onclick: () => doRedo() }, icon('redo', 18));
 const themeBtn = h('button', { class: 'icon-btn hide-sm', type: 'button', id: 'theme-btn', onclick: cycleTheme });
 const langBtn = h('button', { class: 'pill-btn lang-btn hide-sm', type: 'button', id: 'lang-btn', onclick: toggleLang });
 const moreBtn = h('button', { class: 'icon-btn', type: 'button', id: 'more-btn', 'aria-haspopup': 'menu' }, icon('more', 20));
@@ -245,12 +337,20 @@ function openExportMenu(anchor) {
 }
 exportBtn.addEventListener('click', () => openExportMenu(exportBtn));
 
+viewSeg.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = store.getState().ui.view === 'catalog' ? 'ledger' : 'catalog';
+    setView(next);
+    viewSeg.querySelector('.seg.is-active')?.focus();
+});
+
 moreBtn.addEventListener('click', () => {
     const theme = store.getState().prefs.theme;
     openMenu(moreBtn, [
         { label: t('importFile'), icon: 'upload', run: () => openImport({ store, actions }) },
-        { label: t('archive'), icon: 'archive', hint: store.getState().archive.length ? String(store.getState().archive.length) : null, run: () => openArchive({ store, actions }) },
-        { label: t('viewCatalog'), icon: 'list', run: () => setView(store.getState().ui.view === 'catalog' ? 'ledger' : 'catalog') },
+        { label: t('archive'), icon: 'archive', hint: store.getState().archive.length ? t('reports', store.getState().archive.length) : null, run: () => openArchive({ store, actions }) },
+        { label: store.getState().ui.view === 'catalog' ? t('viewLines') : t('viewCatalog'), icon: 'list', run: () => setView(store.getState().ui.view === 'catalog' ? 'ledger' : 'catalog') },
         '-',
         { heading: t('theme') },
         { label: t('themeSystem'), icon: 'monitor', checked: theme === 'system', run: () => store.dispatch({ type: 'PREFS_SET', payload: { theme: 'system' } }) },
@@ -265,10 +365,8 @@ moreBtn.addEventListener('click', () => {
 });
 
 reportPill.addEventListener('click', () => {
-    setupOpen = !setupOpen;
-    renderShell();
-    if (setupOpen) { setup.syncFromMeta(); setup.focus(); }
-    else composer.focus();
+    if (!setupOpen) openSetup();
+    else if (!closeSetup()) { setup.focus(); notify(t('missingMeta'), 'danger'); }
 });
 
 function renderReportPill() {
@@ -370,7 +468,12 @@ function renderAll() {
 store.subscribe((s, prev, action) => {
     if (s.prefs.lang !== prev.prefs.lang) { setLang(s.prefs.lang); renderAll(); }
     if (s.prefs.theme !== prev.prefs.theme) { applyTheme(); renderChrome(); }
-    if (s.doc !== prev.doc || s.ui.view !== prev.ui.view || action.type.startsWith('@@')) renderShell();
+    if (s.doc !== prev.doc || s.ui.view !== prev.ui.view || action.type.startsWith('@@')) {
+        if (action.type.startsWith('@@') && s.doc.meta !== prev.doc.meta) setupOpen = !metaInfo(s.doc.meta).complete;
+        else if (s.doc.meta !== prev.doc.meta && !metaInfo(s.doc.meta).complete && !setupOpen) setupOpen = true;
+        renderShell();
+    }
+    if (action.type === 'REMOTE_SYNC') return;
     if (s.doc !== prev.doc || s.prefs !== prev.prefs || s.archive !== prev.archive || s.usage !== prev.usage) persistSoon();
 });
 
@@ -380,39 +483,47 @@ function isTyping(el) {
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
+function keyName(e) {
+    if (e.key.length === 1 && /[a-z]/i.test(e.key)) return e.key.toLowerCase();
+    if (e.code && e.code.startsWith('Key')) return e.code.slice(3).toLowerCase();
+    return e.key.toLowerCase();
+}
+
+function handleEscape() {
+    if (store.getState().ui.view === 'catalog') { setView('ledger'); composer.focus(); return true; }
+    if (setupOpen) return closeSetup();
+    return false;
+}
+
 document.addEventListener('keydown', e => {
     if (e.defaultPrevented || e.isComposing) return;
+    if (document.querySelector('dialog[open]')) return;
     const mod = e.ctrlKey || e.metaKey;
     const typing = isTyping(document.activeElement);
-    const inDialog = document.activeElement?.closest('dialog');
-    const key = e.key.toLowerCase();
+    const key = keyName(e);
 
-    if (mod && key === 'z' && (!typing || !document.activeElement.value)) {
-        e.preventDefault();
-        e.shiftKey ? doRedo() : doUndo();
+    if (mod && !e.altKey) {
+        if (key === 'z' && (!typing || !document.activeElement.value)) { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); return; }
+        if (key === 'y' && (!typing || !document.activeElement.value)) { e.preventDefault(); doRedo(); return; }
+        if (key === 'p') { e.preventDefault(); printReport(); return; }
+        if (key === 'e') { e.preventDefault(); if (!exportBtn.disabled) openExportMenu(exportBtn); else notify(t('missingLines'), 'danger'); return; }
+        if (key === 'k') { e.preventDefault(); closeMenu(); setView('ledger'); composer.prefill('/'); return; }
+        if (e.key === 'Enter') { e.preventDefault(); closeMenu(); document.activeElement?.blur?.(); finishReport(); return; }
         return;
     }
-    if (mod && key === 'y' && !typing) { e.preventDefault(); doRedo(); return; }
-    if (mod && key === 'p') { e.preventDefault(); printReport(); return; }
-    if (mod && key === 'e') { e.preventDefault(); openExportMenu(exportBtn); return; }
-    if (mod && key === 'k') { e.preventDefault(); setView('ledger'); composer.prefill('/'); return; }
-    if (mod && e.key === 'Enter') { e.preventDefault(); finishReport(); return; }
-    if (inDialog || mod || e.altKey) return;
+    if (e.altKey || document.querySelector('.menu:not(.is-leaving)')) return;
 
     if (!typing) {
-        if (e.key === '/') { e.preventDefault(); setView('ledger'); composer.focus(); return; }
-        if (e.key === '?') { e.preventDefault(); openHelp(); return; }
-        if (e.key === 'Escape') {
-            if (store.getState().ui.view === 'catalog') { setView('ledger'); composer.focus(); }
-            else if (setupOpen && metaInfo(store.getState().doc.meta).complete) { setupOpen = false; renderShell(); composer.focus(); }
-            return;
-        }
-        if (e.key.length === 1 && /[\p{L}\p{N}!+\-]/u.test(e.key) && store.getState().ui.view === 'ledger' && !setupOpen) {
-            composer.focus();
+        if (e.key === '/' || (e.code === 'Slash' && !e.shiftKey)) { e.preventDefault(); setView('ledger'); composer.focus(); return; }
+        if (e.key === '?' || e.key === '؟') { e.preventDefault(); openHelp(); return; }
+        if (e.key === 'Escape') { handleEscape(); return; }
+        if (e.key.length === 1 && /[\p{L}\p{N}!+\-]/u.test(e.key)) {
+            if (setupOpen) setup.focus();
+            else if (store.getState().ui.view === 'ledger') composer.focus();
+            else catalog.focusFilter();
         }
     } else if (e.key === 'Escape') {
-        if (store.getState().ui.view === 'catalog') { setView('ledger'); composer.focus(); }
-        else if (setupOpen && metaInfo(store.getState().doc.meta).complete) { setupOpen = false; renderShell(); composer.focus(); }
+        handleEscape();
     }
 });
 
@@ -420,10 +531,23 @@ addEventListener('beforeprint', () => printer.build(store.getState().doc));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') persistSoon.flush(); });
 addEventListener('pagehide', () => persistSoon.flush());
 addEventListener('storage', e => {
-    if (e.key === 'tally:v1' && e.newValue) {
-        const saved = JSON.parse(e.newValue);
-        if (saved?.doc) store.dispatch({ type: 'DOC_REPLACE', payload: { doc: saved.doc }, meta: { skipHistory: true } });
-    }
+    if (e.key !== storage.KEY || !e.newValue || e.newValue === lastWritten) return;
+    let saved = null;
+    try { saved = JSON.parse(e.newValue); } catch { return; }
+    const doc = sanitizeDoc(saved?.doc);
+    if (!doc) return;
+    persistSoon.cancel();
+    lastWritten = e.newValue;
+    store.dispatch({
+        type: 'REMOTE_SYNC',
+        payload: { doc, prefs: saved.prefs ? sanitizePrefs(saved.prefs) : null, archive: saved.archive, usage: saved.usage },
+        meta: { skipHistory: true }
+    });
+    store.clearHistory();
+    setupOpen = !metaInfo(doc.meta).complete;
+    composer.reset({ keepFocus: false });
+    renderShell();
+    notify(t('syncedTab'), 'neutral', { duration: 2600 });
 });
 
 applyTheme();

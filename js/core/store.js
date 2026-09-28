@@ -72,6 +72,7 @@ export function createStore({ reducer, initialState, historyKey = 'doc', history
         redo: () => travel(future, past, '@@REDO'),
         canUndo: () => past.length > 0,
         canRedo: () => future.length > 0,
+        head: () => past[past.length - 1] || null,
         clearHistory() { past.length = 0; future.length = 0; },
         getLog: () => log.slice()
     };

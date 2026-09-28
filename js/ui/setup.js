@@ -11,7 +11,29 @@ export function suggestedMonth() {
     return d.getDate() <= 20 ? ((d.getMonth() + 11) % 12) + 1 : d.getMonth() + 1;
 }
 
-export function createSetup({ store, onComplete }) {
+function gridColumns(items) {
+    if (!items.length) return 1;
+    const top = items[0].offsetTop;
+    let n = 0;
+    while (n < items.length && items[n].offsetTop === top) n++;
+    return Math.max(1, n);
+}
+
+function gridNav(e, container, onTopEdge) {
+    const items = [...container.querySelectorAll('button')];
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    const cols = gridColumns(items);
+    const rtl = document.documentElement.dir === 'rtl';
+    const moves = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1, ArrowDown: cols, ArrowUp: -cols, Home: -Infinity, End: Infinity };
+    if (!(e.key in moves)) return;
+    e.preventDefault();
+    const next = i + moves[e.key];
+    if (next < 0 && e.key === 'ArrowUp' && onTopEdge) { onTopEdge(); return; }
+    items[Math.max(0, Math.min(items.length - 1, next))].focus();
+}
+
+export function createSetup({ store, onComplete, onDismiss, onPick }) {
     const local = { cls: null, region: null, query: '' };
     const root = h('section', { class: 'setup card glass', id: 'setup-panel', 'aria-labelledby': 'setup-title' });
 
@@ -54,9 +76,16 @@ export function createSetup({ store, onComplete }) {
     );
 
     function meta() { return store.getState().doc.meta; }
-    function setMeta(patch) {
+    function setMeta(patch, { close = true } = {}) {
         store.dispatch({ type: 'META_SET', payload: patch });
-        if (metaInfo(meta()).complete && onComplete) onComplete();
+        if (close && metaInfo(meta()).complete && onComplete) onComplete();
+    }
+
+    function pickPharmacy(p) {
+        const before = meta().pharmacyId;
+        setMeta({ pharmacyId: p.id });
+        if (before !== p.id && onPick) onPick(p, before);
+        if (!meta().month) monthGrid.querySelector('.is-suggested, button')?.focus();
     }
 
     function segButton(active, text, onClick) {
@@ -100,7 +129,7 @@ export function createSetup({ store, onComplete }) {
                 class: 'pharmacy-chip' + (p.id === current ? ' is-active' : ''),
                 type: 'button', role: 'option', 'aria-selected': String(p.id === current),
                 dataset: { id: p.id },
-                onclick: () => { setMeta({ pharmacyId: p.id }); }
+                onclick: () => pickPharmacy(p)
             },
                 h('span', { class: 'chip-code' }, p.id),
                 h('span', { class: 'chip-name', dir: 'rtl' }, p.name)
@@ -132,6 +161,13 @@ export function createSetup({ store, onComplete }) {
         pharmacyLabel.textContent = t('pharmacy');
         monthLabel.textContent = t('month');
         finder.placeholder = t('pharmacyFinderPh');
+        finder.setAttribute('aria-label', t('pharmacyFinder'));
+        yearDown.setAttribute('aria-label', t('prevYear'));
+        yearUp.setAttribute('aria-label', t('nextYear'));
+        yearDown.title = t('prevYear');
+        yearUp.title = t('nextYear');
+        monthGrid.setAttribute('aria-label', t('month'));
+        results.setAttribute('aria-label', t('pharmacy'));
         renderSegs();
         renderPharmacies();
         renderMonths();
@@ -139,31 +175,31 @@ export function createSetup({ store, onComplete }) {
 
     finder.addEventListener('input', () => { local.query = finder.value; renderPharmacies(); });
     finder.addEventListener('keydown', e => {
+        if (e.isComposing) return;
         if (e.key === 'Enter') {
             e.preventDefault();
             const list = candidateList();
-            if (list.length) setMeta({ pharmacyId: list[0].id });
+            if (list.length) pickPharmacy(list[0]);
+            else { root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake'); }
         } else if (e.key === 'ArrowDown') {
             e.preventDefault();
             results.querySelector('button')?.focus();
+        } else if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            if (finder.value) { finder.value = ''; local.query = ''; renderPharmacies(); }
+            else if (onDismiss) onDismiss();
         }
     });
-    results.addEventListener('keydown', e => {
-        const items = [...results.querySelectorAll('button')];
-        const i = items.indexOf(document.activeElement);
-        if (i < 0) return;
-        const cols = Math.max(1, Math.round(results.clientWidth / (items[0].offsetWidth + 8)));
-        const moves = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
-        if (e.key in moves) {
-            e.preventDefault();
-            const dir = document.documentElement.dir === 'rtl' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') ? -1 : 1;
-            const next = i + moves[e.key] * dir;
-            if (next < 0 && e.key === 'ArrowUp') finder.focus();
-            else items[Math.max(0, Math.min(items.length - 1, next))].focus();
+    results.addEventListener('keydown', e => gridNav(e, results, () => finder.focus()));
+    monthGrid.addEventListener('keydown', e => gridNav(e, monthGrid, () => yearUp.focus()));
+    root.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && e.target !== finder && !e.defaultPrevented) {
+            if (onDismiss && onDismiss()) { e.preventDefault(); e.stopPropagation(); }
         }
     });
-    yearDown.addEventListener('click', () => setMeta({ year: meta().year - 1 }));
-    yearUp.addEventListener('click', () => setMeta({ year: meta().year + 1 }));
+    root.addEventListener('animationend', () => root.classList.remove('shake'));
+    yearDown.addEventListener('click', () => setMeta({ year: meta().year - 1 }, { close: false }));
+    yearUp.addEventListener('click', () => setMeta({ year: meta().year + 1 }, { close: false }));
 
     store.subscribe((s, prev) => {
         if (s.doc.meta !== prev.doc.meta) { renderPharmacies(); renderMonths(); }

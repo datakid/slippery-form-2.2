@@ -83,11 +83,21 @@ export function uid() {
 
 export function debounce(fn, ms) {
     let t = null;
+    let pending = null;
     const wrapped = (...args) => {
         clearTimeout(t);
-        t = setTimeout(() => fn(...args), ms);
+        pending = args;
+        t = setTimeout(() => { const a = pending; pending = null; fn(...a); }, ms);
     };
-    wrapped.flush = (...args) => { clearTimeout(t); fn(...args); };
-    wrapped.cancel = () => clearTimeout(t);
+    wrapped.flush = () => {
+        if (!pending) return false;
+        clearTimeout(t);
+        const a = pending;
+        pending = null;
+        fn(...a);
+        return true;
+    };
+    wrapped.cancel = () => { clearTimeout(t); pending = null; };
+    wrapped.pending = () => pending !== null;
     return wrapped;
 }

@@ -197,6 +197,61 @@ await wait(60);
 check('rtl applied', document.documentElement.dir === 'rtl' && document.getElementById('composer-input').placeholder.includes('أضف'));
 T.dispatch({ type: 'PREFS_SET', payload: { lang: 'en' } });
 
+const { debounce } = await import('./js/lib/text.js');
+let calls = 0;
+const d = debounce(() => calls++, 50);
+check('debounce flush is a no-op when idle', d.flush() === false && calls === 0);
+d(); d.flush();
+check('debounce flush runs pending once', calls === 1 && d.flush() === false);
+
+const filter = document.getElementById('ledger-filter');
+type(filter, 'zzzz-nothing');
+await wait(40);
+check('ledger filter shows no-match state', !document.getElementById('ledger-no-match').hidden && document.getElementById('ledger-list').hidden);
+key(filter, 'Escape');
+await wait(40);
+check('Esc clears ledger filter', T.state().ui.filter === '' && filter.value === '');
+
+T.dispatch({ type: 'UI_SET', payload: { onlyNeedsContext: true } });
+const pending = T.state().doc.lines.find(l => l.custom && !l.context);
+T.dispatch({ type: 'LINE_UPDATE', payload: { id: pending.id, patch: { context: 'قرار لجنة' } } });
+await wait(20);
+check('needs-context filter turns off once resolved', T.state().ui.onlyNeedsContext === false);
+
+type(input, '+2');
+await wait(80);
+check('adjust shows a preview row', document.querySelector('#composer-results .result-cmd') !== null);
+key(input, 'Escape');
+input.value = '';
+
+const before = T.state().doc.lines.length;
+type(input, 'qqqqqqqqqqzzzzz');
+await wait(80);
+key(input, 'Enter');
+await wait(40);
+check('Enter with no product picks the new-item option', !document.querySelector('.composer-custom').hidden && T.state().doc.lines.length === before);
+key(document.getElementById('custom-unit'), 'Escape');
+await wait(20);
+T.dispatch({ type: 'UI_SET', payload: {} });
+document.getElementById('composer-input').value = '';
+
+const raw = localStorage.getItem('tally:v1');
+const docBefore = T.state().doc;
+window.dispatchEvent(new StorageEvent('storage', { key: 'tally:v1', newValue: raw }));
+await wait(20);
+check('own storage write does not re-sync', T.state().doc === docBefore);
+
+document.getElementById('report-pill').click();
+await wait(40);
+const yr = T.state().doc.meta.year;
+document.querySelector('.year-stepper .icon-btn:last-child').click();
+await wait(40);
+check('year stepper keeps setup open', !document.getElementById('setup-panel').hidden && T.state().doc.meta.year === yr + 1);
+document.querySelector('.year-stepper .icon-btn:first-child').click();
+key(document.getElementById('pharmacy-finder'), 'Escape');
+await wait(40);
+check('Esc closes a complete setup', document.getElementById('setup-panel').hidden);
+
 const XLSX = await T.loadXLSX();
 check('xlsx lib loads lazily', !!XLSX?.utils);
 

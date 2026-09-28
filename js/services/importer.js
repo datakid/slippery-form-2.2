@@ -81,6 +81,13 @@ function locateHeader(matrix) {
     return null;
 }
 
+function cleanQty(value) {
+    let s = String(value ?? '').trim().replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/\u066C/g, ',');
+    s = s.replace(/[.,]0+$/, '');
+    if (/^\d{1,3}([,\s\u00A0]\d{3})+$/.test(s)) s = s.replace(/[,\s\u00A0]/g, '');
+    return s;
+}
+
 function stripContextSuffix(name) {
     for (const c of CONTEXTS) {
         const suffix = `(${c.id})`;
@@ -101,7 +108,7 @@ export async function analyzeFile(file) {
         const cells = matrix[r];
         let rawName = String(cells[map.name] ?? '').trim();
         const unit = map.unit != null ? String(cells[map.unit] ?? '').trim() : '';
-        const qty = parseQty(String(cells[map.qty] ?? '').replace(/[.,]0+$/, ''));
+        const qty = parseQty(cleanQty(cells[map.qty]));
         let context = map.context != null ? resolveContext(String(cells[map.context] ?? '').trim()) : null;
         if (!rawName) { skipped.push({ row: r + 1, reason: 'name' }); continue; }
         if (/^(total|الاجمالي|الإجمالي)$/i.test(rawName)) continue;

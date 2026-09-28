@@ -28,18 +28,22 @@ export function openImport({ store, actions }) {
     const body = h('div', { class: 'import-body' }, h('p', { class: 'sheet-text' }, t('importHint')), drop, fileInput);
     const sheet = openSheet({ title: t('importTitle'), size: 'lg', body });
 
-    drop.addEventListener('click', () => fileInput.click());
+    drop.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+    requestAnimationFrame(() => drop.focus());
     ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('is-over'); }));
     ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('is-over'); }));
     drop.addEventListener('drop', e => { if (e.dataTransfer?.files?.[0]) handle(e.dataTransfer.files[0]); });
     fileInput.addEventListener('change', () => { if (fileInput.files[0]) handle(fileInput.files[0]); });
 
     async function handle(file) {
+        if (drop.classList.contains('is-busy')) return;
         drop.classList.add('is-busy');
+        drop.setAttribute('aria-busy', 'true');
         let result;
         try { result = await analyzeFile(file); }
-        catch (err) { console.error('[import]', err); toast(t('importFailed'), { tone: 'danger' }); drop.classList.remove('is-busy'); return; }
-        drop.classList.remove('is-busy');
+        catch (err) { console.error('[import]', err); toast(t('importFailed'), { tone: 'danger' }); return; }
+        finally { drop.classList.remove('is-busy'); drop.removeAttribute('aria-busy'); fileInput.value = ''; }
+        if (result.error === 'headers') { toast(t('importNoHeaders'), { tone: 'danger', duration: 6000 }); return; }
         if (!result.items.length) { toast(t('importNothing'), { tone: 'danger' }); return; }
         review(result);
     }
@@ -107,10 +111,11 @@ export function openImport({ store, actions }) {
             const chosen = items.filter(i => i.include && i.status !== 'suggested');
             const lines = chosen.map(i => makeLine({ name: i.name, unit: i.unit, qty: i.qty, context: i.context, custom: i.status === 'custom' }));
             store.dispatch({ type: 'LINES_ADD_MANY', payload: { lines } });
-            actions.notify(t('imported', t('lines', lines.length)), 'success');
             sheet.close();
+            actions.notify(t('imported', t('lines', lines.length)), 'success', { action: actions.undoAction() });
         });
         draw();
+        requestAnimationFrame(() => (addBtn.disabled ? back : addBtn).focus());
     }
 
     function stat(name, n, tone) {
@@ -121,9 +126,23 @@ export function openImport({ store, actions }) {
 export function openArchive({ store, actions }) {
     const body = h('div', { class: 'archive-body' });
     const sheet = openSheet({ title: t('archive'), size: 'md', body });
+    const unsub = store.subscribe((s, prev) => { if (s.archive !== prev.archive && sheet.dialog.isConnected) draw(); });
+    const obs = new MutationObserver(() => { if (!sheet.dialog.isConnected) { unsub(); obs.disconnect(); } });
+    obs.observe(document.body, { childList: true });
+
+    function remove(entry) {
+        const index = store.getState().archive.findIndex(a => a.id === entry.id);
+        store.dispatch({ type: 'ARCHIVE_REMOVE', payload: { id: entry.id } });
+        const info = metaInfo(entry.doc.meta);
+        toast(t('archiveDeleted', info.pharmacy ? info.pharmacy.name : t('notSet')), {
+            action: { label: t('undo'), run: () => store.dispatch({ type: 'ARCHIVE_ADD', payload: { entry, index } }) }
+        });
+        requestAnimationFrame(() => body.querySelector('.archive-row button')?.focus());
+    }
 
     function draw() {
         const list = store.getState().archive;
+        const currentId = actions.currentDocId();
         clear(body);
         if (!list.length) { body.appendChild(h('p', { class: 'empty-small' }, icon('archive', 22), t('archiveEmpty'))); return; }
         const fmt = new Intl.DateTimeFormat(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
@@ -138,32 +157,39 @@ export function openArchive({ store, actions }) {
                     h('div', { class: 'row-meta' },
                         h('span', { class: 'unit-tag' }, `${info.month ? label(info.month) : '—'} ${entry.doc.meta.year}`),
                         h('span', { class: 'muted small' }, `${t('lines', tt.count)} · ${t('units', tt.units)}`),
-                        h('span', { class: 'muted small' }, fmt.format(entry.finishedAt))
+                        h('span', { class: 'muted small' }, fmt.format(entry.finishedAt)),
+                        entry.id === currentId ? h('span', { class: 'status-dot s-matched' }, t('openNow')) : null
                     )
                 ),
                 h('div', { class: 'archive-actions' },
-                    h('button', { class: 'btn btn-sm btn-tonal', type: 'button', onclick: async () => {
-                        const ok = !store.getState().doc.lines.length || await confirmSheet({ title: t('openTitle'), body: t('openBody'), confirmLabel: t('open') });
+                    h('button', { class: 'btn btn-sm btn-tonal', type: 'button', disabled: entry.id === currentId, onclick: async () => {
+                        const cur = store.getState().doc;
+                        const ok = !cur.lines.length || await confirmSheet({ title: t('openTitle'), body: t('openBody'), confirmLabel: t('open') });
                         if (!ok) return;
-                        actions.openArchived(entry);
                         sheet.close();
+                        actions.openArchived(entry);
                     } }, t('open')),
-                    h('button', { class: 'icon-btn sm', type: 'button', 'aria-label': t('delete'), title: t('delete'), onclick: () => {
-                        store.dispatch({ type: 'ARCHIVE_REMOVE', payload: { id: entry.id } });
-                        draw();
-                    } }, icon('trash', 16))
+                    h('button', { class: 'icon-btn sm', type: 'button', 'aria-label': t('delete'), title: t('delete'), onclick: () => remove(entry) }, icon('trash', 16))
                 )
             ));
         }
         body.appendChild(ol);
     }
     draw();
+    requestAnimationFrame(() => body.querySelector('.archive-row .btn:not(:disabled)')?.focus());
 }
 
 export function openFinish({ store, actions }) {
     return new Promise(resolve => {
         let format = store.getState().prefs.lastFormat || 'xlsx';
         const seg = h('div', { class: 'format-choice', role: 'radiogroup' });
+        seg.addEventListener('keydown', e => {
+            if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+            e.preventDefault();
+            format = format === 'xlsx' ? 'csv' : 'xlsx';
+            drawSeg();
+            seg.querySelector('.is-active')?.focus();
+        });
         function drawSeg() {
             clear(seg).append(
                 ...[['xlsx', 'sheet', t('exportXlsx'), t('exportXlsxHint')], ['csv', 'file', t('exportCsv'), t('exportCsvHint')]].map(([id, ic, name, sub]) =>
@@ -176,6 +202,7 @@ export function openFinish({ store, actions }) {
         const s = store.getState();
         const info = metaInfo(s.doc.meta);
         const tt = totals(s.doc.lines);
+        const custom = tt.custom ? h('span', null, t('finishCustom', tt.custom)) : null;
         let done = false;
         const ok = h('button', { class: 'btn btn-primary', type: 'button' }, icon('check', 18), t('finishConfirm'));
         const cancel = h('button', { class: 'btn btn-quiet', type: 'button' }, t('cancel'));
@@ -184,7 +211,8 @@ export function openFinish({ store, actions }) {
             body: h('div', { class: 'finish-body' },
                 h('div', { class: 'finish-summary' },
                     h('strong', { dir: 'rtl' }, info.pharmacy?.name || ''),
-                    h('span', null, `${info.month ? label(info.month) : ''} ${s.doc.meta.year} · ${t('lines', tt.count)} · ${t('units', tt.units)}`)
+                    h('span', null, `${info.month ? label(info.month) : ''} ${s.doc.meta.year} · ${t('lines', tt.count)} · ${t('units', tt.units)}`),
+                    custom
                 ),
                 h('p', { class: 'sheet-text' }, t('finishBody')),
                 h('span', { class: 'field-label' }, t('finishExport')),

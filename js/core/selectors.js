@@ -36,7 +36,7 @@ export function visibleLines(state) {
     const { filter, onlyNeedsContext } = state.ui;
     const q = normalize(filter);
     let out = lines;
-    if (onlyNeedsContext) out = out.filter(l => l.custom && !l.context);
+    if (onlyNeedsContext && lines.some(l => l.custom && !l.context)) out = out.filter(l => l.custom && !l.context);
     if (q) out = out.filter(l => normalize(`${l.name} ${l.unit} ${l.context || ''}`).includes(q));
     const sort = state.prefs.sort;
     const copy = out.slice();

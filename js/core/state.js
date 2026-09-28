@@ -1,6 +1,5 @@
-import { uid } from '../lib/text.js';
+import { uid, normalize } from '../lib/text.js';
 import { PRODUCT_MAP, PHARMACY_BY_ID, productKey } from '../data/catalog.js';
-import { normalize } from '../lib/text.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -59,6 +58,14 @@ function mergeInto(lines, incoming, mode) {
 }
 
 export function reducer(state, action) {
+    const next = baseReducer(state, action);
+    if (next !== state && next.ui.onlyNeedsContext && next.doc.lines !== state.doc.lines && !next.doc.lines.some(l => l.custom && !l.context)) {
+        return { ...next, ui: { ...next.ui, onlyNeedsContext: false } };
+    }
+    return next;
+}
+
+function baseReducer(state, action) {
     const { type, payload = {} } = action;
     switch (type) {
         case 'META_SET': {
@@ -104,6 +111,15 @@ export function reducer(state, action) {
             });
             return changed ? withDoc(state, { lines }) : state;
         }
+        case 'LINES_MERGE': {
+            const from = state.doc.lines.find(l => l.id === payload.from);
+            const into = state.doc.lines.find(l => l.id === payload.into);
+            if (!from || !into || from === into) return state;
+            const lines = state.doc.lines
+                .filter(l => l.id !== from.id)
+                .map(l => l.id === into.id ? { ...l, qty: l.qty + from.qty, updatedAt: Date.now() } : l);
+            return { ...withDoc(state, { lines }), ui: { ...state.ui, lastLineId: into.id } };
+        }
         case 'LINE_REMOVE': {
             const ids = new Set(Array.isArray(payload.ids) ? payload.ids : [payload.id]);
             const lines = state.doc.lines.filter(l => !ids.has(l.id));
@@ -121,8 +137,19 @@ export function reducer(state, action) {
         case 'UI_SET':
             return { ...state, ui: { ...state.ui, ...payload } };
         case 'ARCHIVE_ADD': {
-            const archive = [payload.entry, ...state.archive.filter(a => a.id !== payload.entry.id)].slice(0, 36);
+            const rest = state.archive.filter(a => a.id !== payload.entry.id);
+            const at = Number.isInteger(payload.index) ? Math.max(0, Math.min(payload.index, rest.length)) : 0;
+            const archive = [...rest.slice(0, at), payload.entry, ...rest.slice(at)].slice(0, 36);
             return { ...state, archive };
+        }
+        case 'REMOTE_SYNC': {
+            if (!payload.doc) return state;
+            const next = { ...state, doc: payload.doc };
+            if (payload.prefs && typeof payload.prefs === 'object') next.prefs = { ...state.prefs, ...payload.prefs };
+            if (Array.isArray(payload.archive)) next.archive = payload.archive;
+            if (payload.usage && typeof payload.usage === 'object') next.usage = payload.usage;
+            if (!payload.doc.lines.some(l => l.id === state.ui.lastLineId)) next.ui = { ...state.ui, lastLineId: null };
+            return next;
         }
         case 'USAGE_BUMP': {
             const scope = payload.scope || '_';

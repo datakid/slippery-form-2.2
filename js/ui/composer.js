@@ -85,6 +85,26 @@ export function createComposer({ store, commands, actions }) {
                     h('span', { class: 'result-unit' }, p.unit),
                     have ? h('span', { class: 'result-have' }, `${have} ${t('inReport')}`) : null
                 );
+            } else if (r.type === 'pharmacy') {
+                const cur = store.getState().doc.meta.pharmacyId === r.item.id;
+                row = h('div', { class: 'result result-cmd', id, role: 'option' },
+                    icon('store', 17),
+                    h('span', { class: 'result-main' },
+                        h('span', { class: 'result-name', dir: 'rtl' }, r.item.name),
+                        h('span', { class: 'result-sub' }, cur ? t('pharmacyCurrent') : t('switchPharmacy'))
+                    ),
+                    h('span', { class: 'result-unit' }, r.item.id)
+                );
+            } else if (r.type === 'adjust') {
+                const l = r.line;
+                row = h('div', { class: 'result result-cmd' + (l ? '' : ' is-disabled'), id, role: 'option' },
+                    icon(r.delta < 0 ? 'minus' : 'plus', 17),
+                    h('span', { class: 'result-main' },
+                        h('span', { class: 'result-name' }, l ? l.name.split(' (')[0] : t('noLastLine')),
+                        l ? h('span', { class: 'result-sub' }, t('adjustPreview', l.qty, Math.max(0, l.qty + r.delta))) : null
+                    ),
+                    l ? h('span', { class: 'result-unit' }, l.unit || '—') : null
+                );
             } else if (r.type === 'new') {
                 row = h('div', { class: 'result result-new', id, role: 'option' },
                     icon('sparkle', 16),
@@ -109,7 +129,8 @@ export function createComposer({ store, commands, actions }) {
             });
             list.appendChild(row);
         });
-        input.setAttribute('aria-activedescendant', st.results.length ? `opt-${st.active}` : '');
+        if (st.results.length) input.setAttribute('aria-activedescendant', `opt-${st.active}`);
+        else input.removeAttribute('aria-activedescendant');
     }
 
     function highlight() {
@@ -128,7 +149,11 @@ export function createComposer({ store, commands, actions }) {
         const parsed = parseOmni(raw);
         st.remapped = null;
         st.mode = 'search';
-        if (parsed.kind === 'command') {
+        if (parsed.kind === 'pharmacy') {
+            st.results = [{ type: 'pharmacy', item: parsed.pharmacy }];
+        } else if (parsed.kind === 'adjust') {
+            st.results = [{ type: 'adjust', delta: parsed.delta, line: actions.lastLine() }];
+        } else if (parsed.kind === 'command') {
             st.mode = 'command';
             const q = parsed.query;
             st.results = commands()
@@ -152,6 +177,7 @@ export function createComposer({ store, commands, actions }) {
     }
 
     function select(product) {
+        runSearch.cancel();
         st.selected = product;
         st.custom = null;
         st.mode = 'qty';
@@ -165,7 +191,9 @@ export function createComposer({ store, commands, actions }) {
         input.value = '';
         input.hidden = true;
         customRow.hidden = true;
+        qty.value = '';
         setOpen(false);
+        root.classList.remove('is-custom');
         root.classList.add('has-selection');
         const have = inReportQty(product);
         qty.placeholder = have ? t('prev', have) : t('composerPhQty');
@@ -174,6 +202,7 @@ export function createComposer({ store, commands, actions }) {
     }
 
     function startCustom(name, preset = {}) {
+        runSearch.cancel();
         st.custom = { name, unit: preset.unit || '', context: preset.context || null };
         st.selected = null;
         st.mode = 'custom';
@@ -187,7 +216,8 @@ export function createComposer({ store, commands, actions }) {
         unitInput.value = st.custom.unit;
         renderCtx();
         setOpen(false);
-        if (preset.qty) qty.value = preset.qty;
+        qty.value = preset.qty ? String(preset.qty) : '';
+        qty.placeholder = t('composerPhQty');
         (st.custom.unit ? qty : unitInput).focus();
     }
 
@@ -204,6 +234,7 @@ export function createComposer({ store, commands, actions }) {
     }
 
     function reset({ keepFocus = true } = {}) {
+        runSearch.cancel();
         st.selected = null;
         st.custom = null;
         st.mode = 'search';
@@ -227,7 +258,7 @@ export function createComposer({ store, commands, actions }) {
 
     function commit(entry, amount) {
         const q = amount ?? parseQty(qty.value);
-        if (!q) { shake(); actions.notify(t('qtyRequired'), 'danger'); qty.focus(); return false; }
+        if (!q) { shake(); actions.notify(t('qtyRequired'), 'danger'); qty.focus(); qty.select(); return false; }
         const line = entry.custom
             ? makeLine({ name: entry.name, unit: entry.unit, qty: q, context: entry.context, custom: true })
             : makeLine({ name: entry.name, unit: entry.unit, qty: q, custom: false });
@@ -246,8 +277,14 @@ export function createComposer({ store, commands, actions }) {
     }
 
     function choose(r) {
-        if (!r) return;
+        if (!r) { shake(); actions.notify(t('noMatchHint'), 'danger', { duration: 2600 }); return; }
         if (r.type === 'cmd') { reset({ keepFocus: false }); r.item.run(); return; }
+        if (r.type === 'pharmacy') { reset(); actions.setPharmacy(r.item); return; }
+        if (r.type === 'adjust') {
+            if (actions.adjustLast(r.delta)) reset();
+            else shake();
+            return;
+        }
         const parsed = parseOmni(input.value);
         if (r.type === 'product') {
             if (parsed.kind === 'line' && parsed.qty) { commit(r.item, parsed.qty); return; }
@@ -265,16 +302,19 @@ export function createComposer({ store, commands, actions }) {
     function handleEnter() {
         const parsed = parseOmni(input.value);
         if (parsed.kind === 'empty') return;
-        if (parsed.kind === 'adjust') { actions.adjustLast(parsed.delta); input.value = ''; setOpen(false); return; }
-        if (parsed.kind === 'pharmacy') { actions.setPharmacy(parsed.pharmacy); input.value = ''; setOpen(false); return; }
-        if (parsed.kind === 'line' && parsed.forceExt) { choose({ type: 'new', name: parsed.name }); return; }
-        runSearch.flush();
+        if (parsed.kind === 'adjust') { choose({ type: 'adjust', delta: parsed.delta }); return; }
+        if (parsed.kind === 'pharmacy') { choose({ type: 'pharmacy', item: parsed.pharmacy }); return; }
+        if (parsed.kind === 'line' && parsed.forceExt) {
+            if (!parsed.name) { shake(); actions.notify(t('nameRequired'), 'danger'); return; }
+            choose({ type: 'new', name: parsed.name });
+            return;
+        }
+        if (!runSearch.flush() && !st.results.length) compute();
         choose(st.results[st.active]);
     }
 
     input.addEventListener('input', () => {
-        const v = input.value;
-        if (/^\s*[+-]\s*\d*$/.test(v) || v.trim() === '') { st.results = []; setOpen(false); return; }
+        if (input.value.trim() === '') { runSearch.cancel(); st.results = []; st.remapped = null; setOpen(false); return; }
         runSearch();
     });
     input.addEventListener('focus', () => { if (input.value) compute(); });
@@ -285,9 +325,14 @@ export function createComposer({ store, commands, actions }) {
             e.preventDefault();
             if (!st.open) setOpen(true);
             else { st.active = (st.active + 1) % st.results.length; highlight(); }
-        } else if (e.key === 'ArrowUp' && st.results.length) {
+        } else if (e.key === 'ArrowUp' && st.results.length && st.open) {
             e.preventDefault();
             st.active = (st.active - 1 + st.results.length) % st.results.length; highlight();
+        } else if (e.key === 'ArrowDown' && !input.value) {
+            if (actions.focusLedger()) e.preventDefault();
+        } else if ((e.key === 'Home' || e.key === 'End') && st.open && st.results.length) {
+            e.preventDefault();
+            st.active = e.key === 'Home' ? 0 : st.results.length - 1; highlight();
         } else if (e.key === 'Enter') {
             e.preventDefault();
             handleEnter();
@@ -324,34 +369,53 @@ export function createComposer({ store, commands, actions }) {
             compute();
         } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            bump(e.key === 'ArrowUp' ? 1 : -1);
-        } else if (st.mode === 'custom' && /^[1-4]$/.test(e.key) && e.altKey) {
+            bump((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1));
+        } else if (st.mode === 'custom' && e.altKey && /^Digit[1-4]$/.test(e.code || '')) {
             e.preventDefault();
-            st.custom.context = CONTEXTS[+e.key - 1].id; renderCtx(); qty.focus();
+            st.custom.context = CONTEXTS[+e.code.slice(5) - 1].id; renderCtx(); qty.focus();
         }
     });
+    qty.addEventListener('focus', () => qty.select());
     function bump(d) {
-        const v = Math.max(0, (parseQty(qty.value) || 0) + d);
+        const v = Math.min(9999999, Math.max(0, (parseQty(qty.value) || 0) + d));
         qty.value = v ? String(v) : '';
         qty.focus();
+        const end = qty.value.length;
+        try { qty.setSelectionRange(end, end); } catch {}
     }
     stepUp.addEventListener('click', () => bump(1));
     stepDown.addEventListener('click', () => bump(-1));
 
     unitInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); st.custom.unit = unitInput.value.trim(); ctxGroup.querySelector('.is-active, button')?.focus(); }
-        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); reset(); }
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            st.custom.unit = unitInput.value.trim();
+            if (st.custom.context) qty.focus();
+            else ctxGroup.querySelector('.is-active, button')?.focus();
+        } else if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            const name = st.custom?.name || '';
+            reset();
+            input.value = name;
+            compute();
+        }
     });
     unitInput.addEventListener('input', () => { if (st.custom) st.custom.unit = unitInput.value; });
     ctxGroup.addEventListener('keydown', e => {
         const btns = [...ctxGroup.querySelectorAll('button')];
         const i = btns.indexOf(document.activeElement);
-        if (/^[1-4]$/.test(e.key)) { e.preventDefault(); btns[+e.key - 1].click(); }
+        const digit = /^Digit[1-4]$/.test(e.code || '') ? +e.code.slice(5) : /^[1-4]$/.test(e.key) ? +e.key : 0;
+        if (digit) { e.preventDefault(); if (st.custom) { st.custom.context = CONTEXTS[digit - 1].id; renderCtx(); } qty.focus(); }
         else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
             e.preventDefault();
             const dir = (e.key === 'ArrowRight') !== (document.documentElement.dir === 'rtl') ? 1 : -1;
             btns[(i + dir + btns.length) % btns.length].focus();
-        } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); reset(); }
+        } else if (e.key === 'Enter' && i >= 0) {
+            e.preventDefault();
+            if (st.custom) { st.custom.context = CONTEXTS[i].id; renderCtx(); }
+            qty.focus();
+        } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); unitInput.focus(); }
     });
 
     chip.addEventListener('click', () => {
@@ -383,15 +447,20 @@ export function createComposer({ store, commands, actions }) {
             const have = inReportQty(p);
             quick.appendChild(h('button', {
                 class: 'quick-chip' + (have ? ' is-have' : ''), type: 'button', title: `${p.name} · ${p.unit}`,
-                onclick: () => select(p)
+                onclick: () => { actions.showLedger(); select(p); }
             }, p.base.length > 22 ? p.base.slice(0, 21) + '…' : p.base, h('small', null, p.unit)));
         }
     }
 
     function render() {
         input.placeholder = t('composerPh');
-        qty.placeholder = t('composerPhQty');
+        const have = st.selected ? inReportQty(st.selected) : 0;
+        qty.placeholder = have ? t('prev', have) : t('composerPhQty');
         qty.setAttribute('aria-label', t('qty'));
+        root.setAttribute('aria-label', t('addLine'));
+        input.setAttribute('aria-label', t('composerPh'));
+        stepDown.title = t('stepHint');
+        stepUp.title = t('stepHint');
         addBtn.querySelector('.composer-add-label').textContent = t('add');
         unitInput.placeholder = t('unitPh');
         customRow.querySelector('.custom-badge-text').textContent = t('newItem');
@@ -408,7 +477,11 @@ export function createComposer({ store, commands, actions }) {
         el: root,
         quickEl: quick,
         render,
-        focus() { (st.mode === 'search' ? input : qty).focus(); },
+        focus() {
+            if (st.mode === 'search') input.focus();
+            else if (st.mode === 'custom' && !unitInput.value.trim()) unitInput.focus();
+            else qty.focus();
+        },
         reset,
         prefill(text) { reset(); input.value = text; compute(); },
         debug: () => ({ ...st, results: st.results.length })

@@ -6,7 +6,8 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 | Path | Purpose |
 |---|---|
 | `index.html` | The app |
-| `tests.html` | Self-test harness (45 checks). Backs up and restores your localStorage |
+| `tests.html` | Self-test harness (55 checks). Backs up and restores your localStorage |
+| `manifest.webmanifest` | Install metadata (uses `images/icon.jpg`) |
 
 ## Features
 - **Setup card**: find a pharmacy by code (`a21`) or Arabic name, or filter by class and region chips. There's a month grid (the likely month is suggested) and a year stepper. It collapses into the top pill once filled in.
@@ -20,13 +21,16 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 - **Frequent chips**: the products used most for the current pharmacy.
 - **My lines**: edit quantities inline (Enter or arrows move between rows, 0 removes the line), pick context from a popover, filter, and sort (recent, A–Z, qty). New items without a context are flagged.
 - **Full list**: the old "legacy mode" as a spreadsheet view of the whole catalogue.
-- **Undo/redo** for every change (Ctrl Z / Ctrl Shift Z, plus toast Undo buttons).
+- **Undo/redo** for every change (Ctrl Z / Ctrl Shift Z, plus toast Undo buttons). Undo and redo show a short toast saying what changed. A toast's Undo button only acts if nothing else has changed since.
+- **Keyboard extras**: ↓ from an empty add bar jumps into your lines. Shift+↑/↓ steps qty by 10. Delete on an empty line qty removes the line. → moves from qty to the context pill. Digits pick menu items. Arrow keys work in the month grid. Esc steps back from anywhere. Shortcuts also work on the Arabic keyboard layout.
+- **Guidance**: code and `+/-` entries show a preview before Enter. Filters show a no-match state with a clear button. Finish checks jump straight to the first line that needs fixing.
 - **Finish**: checks the report, exports XLSX or CSV, archives it locally and starts a fresh report.
 - **Archive**: reopen or delete finished reports.
 - **Import** CSV or XLSX with review: matched, suggested (accept, or keep as new), new items needing a context, and skipped rows.
 - **Print**: A4 Arabic report with numbered rows, totals and a signature block.
 - EN/AR with full RTL, System/Light/Dark themes, and a mobile bottom-sheet layout.
 - Data from the previous apps (`bayan:v3:*` and `lx_b`) is picked up automatically.
+- Several tabs open at once stay in sync without overwriting each other. Saved data is checked and cleaned on load.
 
 ## Architecture (ES modules, no build step)
 ```
@@ -41,6 +45,14 @@ js/ui/                  setup, composer, ledger, catalog-view, dialogs, overlay,
 js/main.js              wiring, commands, shortcuts, debug API
 ```
 **Debugging:** open the console and use `tally.state()`, `tally.log()` (action history), `tally.rows()`, `tally.csv()`, `tally.undo()`, `tally.reset()`.
+
+## Not implemented
+- Cloud sync and multi-device sharing (everything stays in this browser).
+- Offline service worker (the app works offline only once it's cached by the browser).
+
+## Next steps
+- Add an offline service worker.
+- Make a proper square PNG/SVG app icon at 192/512 px for install.
 
 ## Data model
 Stored in localStorage key `tally:v1`: `{ v, doc: { id, meta: { year, month, pharmacyId }, lines: [{ id, name, unit, qty, custom, context, addedAt, updatedAt }] }, prefs, archive, usage }`.

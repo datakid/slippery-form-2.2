@@ -1,14 +1,15 @@
 import { SCHEMA_VERSION, emptyDoc, emptyMeta, makeLine } from './state.js';
 import { PHARMACIES, MONTHS, PRODUCT_ALIASES, PRODUCT_MAP, productKey, CONTEXTS } from '../data/catalog.js';
 
-const KEY = 'tally:v1';
+export const KEY = 'tally:v1';
 
 function safeParse(raw) {
     try { return raw ? JSON.parse(raw) : null; } catch { return null; }
 }
 
 export function load() {
-    const saved = safeParse(localStorage.getItem(KEY));
+    let saved = null;
+    try { saved = safeParse(localStorage.getItem(KEY)); } catch {}
     if (saved && saved.v === SCHEMA_VERSION) return { data: saved, migrated: null };
     const migrated = migrateLegacy();
     return { data: migrated, migrated: migrated ? migrated.source : null };
@@ -30,6 +31,10 @@ export function persist(state) {
         console.error('[storage] persist failed', err);
         return { ok: false, error: err };
     }
+}
+
+export function raw() {
+    try { return localStorage.getItem(KEY); } catch { return null; }
 }
 
 export function storageUsage() {
