@@ -6,8 +6,9 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 | Path | Purpose |
 |---|---|
 | `index.html` | The app |
-| `tests.html` | Self-test harness (73 checks). Backs up and restores your localStorage |
-| `manifest.webmanifest` | Install metadata (uses `images/icon.jpg`) |
+| `tests.html` | Self-test harness (77 checks). Backs up and restores your localStorage |
+| `manifest.webmanifest` | Install metadata (192/512 icons, maskable icon) |
+| `sw.js` | Offline service worker (app-shell cache) |
 
 ## Features
 - **Setup card**: find a pharmacy by code (`a21`) or Arabic name, or filter by class and region chips. There's a month grid (the likely month is suggested) and a year field you can type straight into (Arabic digits work, Enter confirms, Esc reverts), with a stepper beside it. It collapses into the top pill once filled in.
@@ -30,6 +31,7 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 - **Print**: A4 Arabic report with numbered rows, totals and a signature block.
 - EN/AR with full RTL, System/Light/Dark themes, and a mobile bottom-sheet layout.
 - Data from the previous apps (`bayan:v3:*` and `lx_b`) is picked up automatically.
+- **Offline and installable**: after the first visit the app opens and works with no connection, including XLSX export, and can be installed from the browser. When online every file is fetched fresh, so updates show on the next reload. The cached copy is used only when the network is down or takes longer than 4 seconds. A one-time notice says when offline use is ready.
 - Several tabs open at once stay in sync without overwriting each other. Saved data is checked and cleaned on load.
 
 ## Architecture (ES modules, no build step)
@@ -40,19 +42,29 @@ js/core/store.js        dispatch/subscribe store, undo/redo with grouping, actio
 js/core/state.js        reducer + line model
 js/core/selectors.js    derived data (totals, visible lines, issues)
 js/core/storage.js      persist/load + legacy migration
-js/services/            exporter (CSV/XLSX), importer, lazy xlsx loader
+js/services/            exporter (CSV/XLSX), importer, lazy xlsx loader, offline registration
 js/ui/                  setup, composer, ledger, catalog-view, dialogs, overlay, print
 js/main.js              wiring, commands, shortcuts, debug API
+sw.js                   offline service worker (shell cache, font cache)
 ```
 **Debugging:** open the console and use `tally.state()`, `tally.log()` (action history), `tally.rows()`, `tally.csv()`, `tally.undo()`, `tally.reset()`.
 
+## Offline maintenance
+- Every file the app loads must be listed in `SHELL` inside `sw.js`. The self-test harness fails if a loaded file is missing from the list or a listed file does not exist.
+- Bump `VERSION` in `sw.js` only when the list's structure changes. Old caches are removed on activation.
+- Google Fonts are cached the first time they load online. A first-ever session that starts offline uses system fonts.
+
+## Icons
+Sources are `favicon.svg` (rounded) and `images/icon-maskable.svg` (full bleed). The PNGs in `images/` are rendered from them at 192, 512 (standard and maskable) and 180 (Apple touch).
+
 ## Not implemented
 - Cloud sync and multi-device sharing (everything stays in this browser).
-- Offline service worker (the app works offline only once it's cached by the browser).
 
 ## Next steps
-- Add an offline service worker.
-- Make a proper square PNG/SVG app icon at 192/512 px for install.
+- Backup and restore of the whole local state, plus a request for persistent storage.
+- Self-host the fonts so a first offline session looks identical.
+- Run the self-test harness automatically on every push.
+- Fix the January month suggestion so it points at December of the previous year.
 
 ## Data model
 Stored in localStorage key `tally:v1`: `{ v, doc: { id, meta: { year, month, pharmacyId }, lines: [{ id, name, unit, qty, custom, context, addedAt, updatedAt }] }, prefs, archive, usage }`.

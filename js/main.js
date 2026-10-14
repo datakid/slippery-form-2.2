@@ -6,6 +6,7 @@ import { metaInfo, totals, issues } from './core/selectors.js';
 import * as storage from './core/storage.js';
 import { exportCSV, exportXLSX, toRows, toCSV } from './services/exporter.js';
 import { loadXLSX } from './services/xlsx-loader.js';
+import { registerOffline } from './services/offline.js';
 import { toast, confirmSheet, openMenu, closeMenu, initTooltips } from './ui/overlay.js';
 import { createSetup, suggestedMonth } from './ui/setup.js';
 import { createComposer } from './ui/composer.js';
@@ -297,7 +298,7 @@ const catalog = createCatalogView({ store, actions });
 const printer = createPrintSheet();
 
 const brand = h('a', { class: 'brand', href: './', 'aria-label': 'Tally' },
-    h('img', { class: 'brand-mark', src: 'images/icon.jpg', alt: '', width: 30, height: 30 }),
+    h('img', { class: 'brand-mark', src: 'favicon.svg', alt: '', width: 30, height: 30 }),
     h('span', { class: 'brand-text' }, h('strong', { class: 'brand-name' }), h('small', { class: 'brand-tag' }))
 );
 const reportPill = h('button', { class: 'report-pill', id: 'report-pill', type: 'button', 'aria-controls': 'setup-panel' });
@@ -560,6 +561,7 @@ if (migrated) {
     persistNow();
 }
 saveState.at = Date.now();
+registerOffline({ onReady: () => notify(t('offlineReady'), 'success', { duration: 5000 }) });
 
 globalThis.tally = {
     store,

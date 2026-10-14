@@ -318,6 +318,28 @@ check('Esc closes a complete setup', document.getElementById('setup-panel').hidd
 const XLSX = await T.loadXLSX();
 check('xlsx lib loads lazily', !!XLSX?.utils);
 
+const swSource = await (await fetch('sw.js')).text();
+const shellList = new Function('return ' + swSource.match(/const SHELL = (\[[\s\S]*?\]);/)[1])();
+const shellKeys = new Set(shellList.map(p => new URL(p, location.href).pathname));
+const shellStatus = await Promise.all(shellList.map(async p => [p, (await fetch(p, { cache: 'no-store' })).ok]));
+check('every file in the offline shell exists', shellStatus.every(([, ok]) => ok), shellStatus.filter(([, ok]) => !ok).map(([p]) => p));
+const loaded = performance.getEntriesByType('resource')
+    .map(e => new URL(e.name))
+    .filter(u => u.origin === location.origin && !/\/(tests\.html|sw\.js)$/.test(u.pathname))
+    .map(u => u.pathname);
+const uncached = [...new Set(loaded)].filter(p => !shellKeys.has(p));
+check('everything the app loads is in the offline shell', loaded.length > 20 && uncached.length === 0, uncached);
+
+const manifest = await (await fetch('manifest.webmanifest')).json();
+const iconChecks = await Promise.all(manifest.icons.filter(i => i.sizes !== 'any').map(i => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve({ src: i.src, ok: `${img.naturalWidth}x${img.naturalHeight}` === i.sizes && i.type === 'image/png' });
+    img.onerror = () => resolve({ src: i.src, ok: false });
+    img.src = i.src;
+})));
+check('manifest icons exist at their declared size', iconChecks.length >= 3 && iconChecks.every(c => c.ok), iconChecks.filter(c => !c.ok));
+check('manifest ships installable and maskable icons', ['192x192', '512x512'].every(s => manifest.icons.some(i => i.sizes === s && i.purpose === 'any')) && manifest.icons.some(i => i.purpose === 'maskable'));
+
 const failed = results.filter(r => !r.ok).length;
 const sum = document.createElement('div');
 sum.className = failed ? 'fail' : 'ok';
