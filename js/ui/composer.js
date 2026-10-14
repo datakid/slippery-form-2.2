@@ -1,4 +1,4 @@
-import { h, icon, clear } from '../lib/dom.js';
+import { h, icon, clear, flagInvalid, clearInvalid } from '../lib/dom.js';
 import { t } from '../i18n.js';
 import { PRODUCTS, CONTEXTS, PRODUCT_MAP, productKey } from '../data/catalog.js';
 import { createIndex, searchWithLayoutFallback } from '../lib/search.js';
@@ -25,7 +25,7 @@ export function createComposer({ store, commands, actions }) {
     const stepUp = h('button', { class: 'qty-step', type: 'button', tabindex: '-1', 'aria-label': '+1' }, icon('plus', 15));
     const addBtn = h('button', { class: 'btn btn-primary composer-add', type: 'button', id: 'composer-add' }, icon('plus', 18), h('span', { class: 'composer-add-label' }));
     const list = h('div', { class: 'composer-results', id: 'composer-results', role: 'listbox', hidden: true });
-    const unitInput = h('input', { class: 'field-input sm', id: 'custom-unit', type: 'text', autocomplete: 'off' });
+    const unitInput = h('input', { class: 'field-input sm', id: 'custom-unit', type: 'text', autocomplete: 'off', spellcheck: 'false' });
     const ctxGroup = h('div', { class: 'segmented ctx-seg', role: 'radiogroup' });
     const customRow = h('div', { class: 'composer-custom', hidden: true },
         h('span', { class: 'custom-badge' }, icon('sparkle', 14), h('span', { class: 'custom-badge-text' })),
@@ -34,10 +34,11 @@ export function createComposer({ store, commands, actions }) {
     );
     const quick = h('div', { class: 'quick-strip', id: 'quick-strip' });
 
+    const qtyWrap = h('div', { class: 'qty-wrap' }, stepDown, qty, stepUp);
     const bar = h('div', { class: 'composer-bar' },
         h('span', { class: 'composer-icon' }, icon('search', 20)),
         h('div', { class: 'composer-field' }, chip, input),
-        h('div', { class: 'qty-wrap' }, stepDown, qty, stepUp),
+        qtyWrap,
         addBtn
     );
     const root = h('section', { class: 'composer card glass', id: 'composer', 'aria-label': t('addLine') }, bar, customRow, list);
@@ -245,20 +246,16 @@ export function createComposer({ store, commands, actions }) {
         qty.value = '';
         qty.placeholder = t('composerPhQty');
         customRow.hidden = true;
-        root.classList.remove('has-selection', 'is-custom', 'shake');
+        root.classList.remove('has-selection', 'is-custom');
+        clearInvalid(root);
+        clearInvalid(qtyWrap);
         setOpen(false);
         if (keepFocus) input.focus();
     }
 
-    function shake() {
-        root.classList.remove('shake');
-        void root.offsetWidth;
-        root.classList.add('shake');
-    }
-
     function commit(entry, amount) {
         const q = amount ?? parseQty(qty.value);
-        if (!q) { shake(); actions.notify(t('qtyRequired'), 'danger'); qty.focus(); qty.select(); return false; }
+        if (!q) { flagInvalid(qtyWrap); actions.notify(t('qtyRequired'), 'danger'); qty.focus(); qty.select(); return false; }
         const line = entry.custom
             ? makeLine({ name: entry.name, unit: entry.unit, qty: q, context: entry.context, custom: true })
             : makeLine({ name: entry.name, unit: entry.unit, qty: q, custom: false });
@@ -277,12 +274,12 @@ export function createComposer({ store, commands, actions }) {
     }
 
     function choose(r) {
-        if (!r) { shake(); actions.notify(t('noMatchHint'), 'danger', { duration: 2600 }); return; }
+        if (!r) { flagInvalid(root); actions.notify(t('noMatchHint'), 'danger', { duration: 2600 }); return; }
         if (r.type === 'cmd') { reset({ keepFocus: false }); r.item.run(); return; }
         if (r.type === 'pharmacy') { reset(); actions.setPharmacy(r.item); return; }
         if (r.type === 'adjust') {
             if (actions.adjustLast(r.delta)) reset();
-            else shake();
+            else flagInvalid(root);
             return;
         }
         const parsed = parseOmni(input.value);
@@ -305,7 +302,7 @@ export function createComposer({ store, commands, actions }) {
         if (parsed.kind === 'adjust') { choose({ type: 'adjust', delta: parsed.delta }); return; }
         if (parsed.kind === 'pharmacy') { choose({ type: 'pharmacy', item: parsed.pharmacy }); return; }
         if (parsed.kind === 'line' && parsed.forceExt) {
-            if (!parsed.name) { shake(); actions.notify(t('nameRequired'), 'danger'); return; }
+            if (!parsed.name) { flagInvalid(root); actions.notify(t('nameRequired'), 'danger'); return; }
             choose({ type: 'new', name: parsed.name });
             return;
         }
@@ -314,6 +311,7 @@ export function createComposer({ store, commands, actions }) {
     }
 
     input.addEventListener('input', () => {
+        clearInvalid(root);
         if (input.value.trim() === '') { runSearch.cancel(); st.results = []; st.remapped = null; setOpen(false); return; }
         runSearch();
     });
@@ -346,6 +344,7 @@ export function createComposer({ store, commands, actions }) {
     });
 
     qty.addEventListener('input', () => {
+        clearInvalid(qtyWrap);
         const clean = qty.value.replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x0660)).replace(/\D/g, '').slice(0, 7);
         if (clean !== qty.value) qty.value = clean;
     });

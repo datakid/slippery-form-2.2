@@ -6,7 +6,7 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 | Path | Purpose |
 |---|---|
 | `index.html` | The app |
-| `tests.html` | Self-test harness (64 checks). Backs up and restores your localStorage |
+| `tests.html` | Self-test harness (73 checks). Backs up and restores your localStorage |
 | `manifest.webmanifest` | Install metadata (uses `images/icon.jpg`) |
 
 ## Features

@@ -243,6 +243,31 @@ window.dispatchEvent(new StorageEvent('storage', { key: 'tally:v1', newValue: ra
 await wait(20);
 check('own storage write does not re-sync', T.state().doc === docBefore);
 
+type(input, 'metformin 500');
+await wait(80);
+key(input, 'Enter');
+await wait(30);
+key(qty, 'Enter');
+await wait(30);
+check('empty qty flags the field without any shake', document.querySelector('.qty-wrap').classList.contains('is-invalid') && !document.getElementById('composer').classList.contains('shake'));
+type(qty, '3');
+check('typing clears the qty invalid state', !document.querySelector('.qty-wrap').classList.contains('is-invalid'));
+key(qty, 'Escape');
+await wait(20);
+key(input, 'Escape');
+input.value = '';
+await wait(20);
+
+check('no native select or title tooltip left in the DOM', document.querySelectorAll('select, [title]').length === 0, document.querySelectorAll('select, [title]').length);
+const undoBtn = document.getElementById('undo-btn');
+check('titles are adopted as styled tooltips', undoBtn.dataset.tip === 'Undo (Ctrl Z)' && !undoBtn.hasAttribute('title'), undoBtn.dataset.tip);
+undoBtn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }));
+await wait(650);
+const tip = document.querySelector('.tooltip');
+check('hover shows the app tooltip', tip && !tip.hidden && tip.textContent === 'Undo (Ctrl Z)', tip?.textContent);
+undoBtn.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: document.body }));
+check('leaving hides the tooltip', tip.hidden);
+
 document.getElementById('report-pill').click();
 await wait(40);
 const yr = T.state().doc.meta.year;
@@ -259,6 +284,14 @@ check('year field keeps four latin digits only', yearInput.value === '2031', yea
 yearInput.blur();
 await wait(40);
 check('typed year commits on blur and keeps setup open', T.state().doc.meta.year === 2031 && !document.getElementById('setup-panel').hidden, T.state().doc.meta);
+const yearError = document.getElementById('year-error');
+type(yearInput, '2100');
+check('out-of-range year shows an inline message and no shake', !yearError.hidden && yearInput.getAttribute('aria-invalid') === 'true' && !document.getElementById('setup-panel').classList.contains('shake'), yearError.textContent);
+key(yearInput, 'Enter');
+await wait(20);
+check('Enter on an invalid year keeps the field and the report', yearInput.value === '2100' && T.state().doc.meta.year === 2031 && !document.getElementById('setup-panel').hidden);
+type(yearInput, '2030');
+check('valid year clears the inline message', yearError.hidden && !yearInput.hasAttribute('aria-invalid'));
 type(yearInput, '12');
 yearInput.blur();
 await wait(20);

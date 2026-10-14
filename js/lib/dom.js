@@ -36,6 +36,19 @@ export function clear(el) {
     return el;
 }
 
+const invalidTimers = new WeakMap();
+
+export function flagInvalid(el, ms = 2200) {
+    clearTimeout(invalidTimers.get(el));
+    el.classList.add('is-invalid');
+    invalidTimers.set(el, setTimeout(() => el.classList.remove('is-invalid'), ms));
+}
+
+export function clearInvalid(el) {
+    clearTimeout(invalidTimers.get(el));
+    el.classList.remove('is-invalid');
+}
+
 export function icon(name, size = 18) {
     const paths = ICONS[name];
     const svg = document.createElementNS(SVG_NS, 'svg');

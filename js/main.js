@@ -6,7 +6,7 @@ import { metaInfo, totals, issues } from './core/selectors.js';
 import * as storage from './core/storage.js';
 import { exportCSV, exportXLSX, toRows, toCSV } from './services/exporter.js';
 import { loadXLSX } from './services/xlsx-loader.js';
-import { toast, confirmSheet, openMenu, closeMenu } from './ui/overlay.js';
+import { toast, confirmSheet, openMenu, closeMenu, initTooltips } from './ui/overlay.js';
 import { createSetup, suggestedMonth } from './ui/setup.js';
 import { createComposer } from './ui/composer.js';
 import { createLedger } from './ui/ledger.js';
@@ -550,6 +550,7 @@ addEventListener('storage', e => {
     notify(t('syncedTab'), 'neutral', { duration: 2600 });
 });
 
+initTooltips();
 applyTheme();
 renderAll();
 if (setupOpen) { setup.syncFromMeta(); setup.focus(); }

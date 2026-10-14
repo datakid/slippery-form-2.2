@@ -9,7 +9,7 @@ import { sanitizeDigits } from './ledger.js';
 const index = createIndex(PRODUCTS, p => `${p.name} ${p.unit}`);
 
 export function createCatalogView({ store, actions }) {
-    const filter = h('input', { class: 'filter-input', id: 'catalog-filter', type: 'search', autocomplete: 'off' });
+    const filter = h('input', { class: 'filter-input', id: 'catalog-filter', type: 'search', autocomplete: 'off', spellcheck: 'false' });
     const onlyFilled = h('button', { class: 'pill-btn', type: 'button', 'aria-pressed': 'false' }, icon('check', 15), h('span'));
     const hint = h('p', { class: 'catalog-hint' });
     const list = h('ol', { class: 'catalog-list', id: 'catalog-list' });

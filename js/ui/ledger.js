@@ -33,7 +33,7 @@ function restoreFocus(root, snap) {
 }
 
 export function createLedger({ store, actions }) {
-    const filterInput = h('input', { class: 'filter-input', id: 'ledger-filter', type: 'search', autocomplete: 'off' });
+    const filterInput = h('input', { class: 'filter-input', id: 'ledger-filter', type: 'search', autocomplete: 'off', spellcheck: 'false' });
     const sortBtn = h('button', { class: 'pill-btn', type: 'button', id: 'sort-btn', 'aria-haspopup': 'menu' }, icon('sort', 16), h('span'));
     const alertBar = h('div', { class: 'context-alert', hidden: true });
     const list = h('ol', { class: 'ledger-list', id: 'ledger-list' });

@@ -1,6 +1,6 @@
 import { h, icon, clear, kbd } from '../lib/dom.js';
 import { t, label, getLang } from '../i18n.js';
-import { openSheet, confirmSheet, toast } from './overlay.js';
+import { openSheet, confirmSheet, openMenu, toast } from './overlay.js';
 import { analyzeFile } from '../services/importer.js';
 import { makeLine } from '../core/state.js';
 import { metaInfo, totals } from '../core/selectors.js';
@@ -78,11 +78,19 @@ export function openImport({ store, actions }) {
                     );
                 }
                 if (it.status === 'custom') {
-                    const sel = h('select', { class: 'select sm', 'aria-label': t('context') },
-                        h('option', { value: '' }, t('pickContext')),
-                        CONTEXTS.map(c => h('option', { value: c.id, selected: it.context === c.id }, c.id))
+                    const sel = h('button', {
+                        class: 'select sm' + (it.context ? '' : ' is-empty'), type: 'button', 'aria-haspopup': 'menu', 'aria-label': t('context')
+                    },
+                        h('span', { dir: it.context ? 'rtl' : null }, it.context || t('pickContext')),
+                        icon('chevronDown', 14)
                     );
-                    sel.addEventListener('change', () => { it.context = sel.value || null; draw(); });
+                    sel.addEventListener('click', () => openMenu(sel, [
+                        { label: t('pickContext'), checked: !it.context, run: () => { it.context = null; draw(); } },
+                        ...CONTEXTS.map((c, i) => ({
+                            label: c.id, hint: `${c.en} · #${c.key}`, checked: it.context === c.id, kbd: String(i + 1),
+                            run: () => { it.context = c.id; draw(); }
+                        }))
+                    ], { align: 'start' }));
                     actionsCell.push(sel);
                 }
                 table.appendChild(h('li', { class: `import-row is-${it.status}${it.include ? '' : ' is-off'}` },

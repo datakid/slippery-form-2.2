@@ -145,7 +145,11 @@ export function openMenu(anchor, items, { align = 'end', onClose } = {}) {
         buttons.push(btn);
         list.appendChild(btn);
     }
-    document.body.appendChild(list);
+    (topSheet() || document.body).appendChild(list);
+    if (canPopover) {
+        list.setAttribute('popover', 'manual');
+        try { list.showPopover(); } catch {}
+    }
     const r = anchor.getBoundingClientRect();
     const mw = list.offsetWidth;
     const mh = list.offsetHeight;
@@ -191,6 +195,93 @@ export function openMenu(anchor, items, { align = 'end', onClose } = {}) {
     window.addEventListener('resize', close);
     requestAnimationFrame(() => (buttons.find(b => b.classList.contains('is-checked')) || buttons[0])?.focus());
     return api;
+}
+
+let tipEl = null;
+let tipFor = null;
+let tipTimer = null;
+
+function adoptTitle(el) {
+    const native = el.getAttribute('title');
+    if (native !== null) {
+        el.removeAttribute('title');
+        if (native) {
+            el.dataset.tip = native;
+            if (!el.hasAttribute('aria-label') && !el.textContent.trim()) el.setAttribute('aria-label', native);
+        } else delete el.dataset.tip;
+    }
+    return el.dataset.tip || '';
+}
+
+function adoptTitles(node) {
+    if (node.nodeType !== 1) return;
+    if (node.hasAttribute('title')) adoptTitle(node);
+    node.querySelectorAll('[title]').forEach(adoptTitle);
+}
+
+function tipTarget(node) {
+    return node instanceof Element ? node.closest('[data-tip]') : null;
+}
+
+function hideTip() {
+    clearTimeout(tipTimer);
+    tipFor = null;
+    if (!tipEl || tipEl.hidden) return;
+    tipEl.hidden = true;
+    if (canPopover) { try { tipEl.hidePopover(); } catch {} }
+}
+
+function showTip(el) {
+    const text = el.isConnected ? el.dataset.tip : '';
+    if (!text) { hideTip(); return; }
+    if (!tipEl) {
+        tipEl = h('div', { class: 'tooltip', role: 'tooltip', hidden: true });
+        if (canPopover) tipEl.setAttribute('popover', 'manual');
+    }
+    const host = topSheet() || document.body;
+    if (tipEl.parentNode !== host) {
+        hideTip();
+        host.appendChild(tipEl);
+    }
+    tipEl.textContent = text;
+    tipEl.hidden = false;
+    if (canPopover) { try { if (!tipEl.matches(':popover-open')) tipEl.showPopover(); } catch {} }
+    const r = el.getBoundingClientRect();
+    const w = tipEl.offsetWidth;
+    const hgt = tipEl.offsetHeight;
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8));
+    let top = r.bottom + 8;
+    if (top + hgt > innerHeight - 8) top = Math.max(8, r.top - hgt - 8);
+    tipEl.style.left = left + 'px';
+    tipEl.style.top = top + 'px';
+    tipFor = el;
+}
+
+export function initTooltips() {
+    new MutationObserver(list => {
+        for (const m of list) {
+            if (m.type === 'attributes') adoptTitle(m.target);
+            else m.addedNodes.forEach(adoptTitles);
+        }
+    }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+    adoptTitles(document.body);
+
+    document.addEventListener('pointerover', e => {
+        if (e.pointerType === 'touch') return;
+        const el = tipTarget(e.target);
+        if (el === tipFor) return;
+        hideTip();
+        if (!el) return;
+        tipFor = el;
+        tipTimer = setTimeout(() => showTip(el), 450);
+    });
+    document.addEventListener('pointerout', e => {
+        if (tipFor && tipTarget(e.relatedTarget) !== tipFor) hideTip();
+    });
+    document.addEventListener('pointerdown', hideTip, true);
+    document.addEventListener('keydown', hideTip, true);
+    addEventListener('scroll', hideTip, true);
+    addEventListener('blur', hideTip);
 }
 
 export { clear };
