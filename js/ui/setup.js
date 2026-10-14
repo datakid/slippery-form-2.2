@@ -2,6 +2,7 @@ import { h, icon, clear } from '../lib/dom.js';
 import { t, label, getLang } from '../i18n.js';
 import { CLASSES, REGIONS, MONTHS, PHARMACIES, PHARMACY_BY_ID, pharmaciesFor } from '../data/catalog.js';
 import { createIndex, search } from '../lib/search.js';
+import { parseYear, toLatinDigits } from '../lib/text.js';
 import { metaInfo } from '../core/selectors.js';
 
 const pharmacyIndex = createIndex(PHARMACIES, p => `${p.id} ${p.name}`);
@@ -45,7 +46,10 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     const classSeg = h('div', { class: 'segmented', role: 'radiogroup' });
     const regionSeg = h('div', { class: 'segmented', role: 'radiogroup' });
     const monthGrid = h('div', { class: 'month-grid', role: 'radiogroup' });
-    const yearValue = h('output', { class: 'year-value' });
+    const yearValue = h('input', {
+        class: 'year-value', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', spellcheck: 'false',
+        dir: 'ltr', enterkeyhint: 'done', 'aria-label': t('year')
+    });
     const yearDown = h('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'Previous year' }, icon('minus', 16));
     const yearUp = h('button', { class: 'icon-btn sm', type: 'button', 'aria-label': 'Next year' }, icon('plus', 16));
     const title = h('h2', { class: 'setup-title', id: 'setup-title' });
@@ -79,6 +83,19 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     function setMeta(patch, { close = true } = {}) {
         store.dispatch({ type: 'META_SET', payload: patch });
         if (close && metaInfo(meta()).complete && onComplete) onComplete();
+    }
+
+    function shake() { root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake'); }
+
+    function commitYear() {
+        const n = parseYear(yearValue.value);
+        if (n !== null && n !== meta().year) setMeta({ year: n }, { close: false });
+        yearValue.value = meta().year;
+    }
+
+    function stepYear(delta) {
+        commitYear();
+        setMeta({ year: meta().year + delta }, { close: false });
     }
 
     function pickPharmacy(p) {
@@ -152,7 +169,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
                 h('span', { class: 'month-name' }, getLang() === 'ar' ? mo.ar : mo.en.slice(0, 3))
             ));
         }
-        yearValue.textContent = m.year;
+        yearValue.value = m.year;
     }
 
     function render() {
@@ -162,6 +179,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
         monthLabel.textContent = t('month');
         finder.placeholder = t('pharmacyFinderPh');
         finder.setAttribute('aria-label', t('pharmacyFinder'));
+        yearValue.setAttribute('aria-label', t('year'));
         yearDown.setAttribute('aria-label', t('prevYear'));
         yearUp.setAttribute('aria-label', t('nextYear'));
         yearDown.title = t('prevYear');
@@ -180,7 +198,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
             e.preventDefault();
             const list = candidateList();
             if (list.length) pickPharmacy(list[0]);
-            else { root.classList.remove('shake'); void root.offsetWidth; root.classList.add('shake'); }
+            else shake();
         } else if (e.key === 'ArrowDown') {
             e.preventDefault();
             results.querySelector('button')?.focus();
@@ -198,8 +216,28 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
         }
     });
     root.addEventListener('animationend', () => root.classList.remove('shake'));
-    yearDown.addEventListener('click', () => setMeta({ year: meta().year - 1 }, { close: false }));
-    yearUp.addEventListener('click', () => setMeta({ year: meta().year + 1 }, { close: false }));
+    yearValue.addEventListener('input', () => {
+        const clean = toLatinDigits(yearValue.value).replace(/\D/g, '').slice(0, 4);
+        if (clean !== yearValue.value) yearValue.value = clean;
+    });
+    yearValue.addEventListener('focus', () => yearValue.select());
+    yearValue.addEventListener('blur', commitYear);
+    yearValue.addEventListener('keydown', e => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (parseYear(yearValue.value) === null) { shake(); yearValue.select(); return; }
+            commitYear();
+            if (metaInfo(meta()).complete && onComplete) onComplete();
+            if (!root.hidden) (meta().pharmacyId ? monthGrid.querySelector('.is-active, .is-suggested, button') : finder).focus();
+        } else if (e.key === 'Escape' && yearValue.value !== String(meta().year)) {
+            e.preventDefault(); e.stopPropagation();
+            yearValue.value = meta().year;
+            yearValue.select();
+        }
+    });
+    yearDown.addEventListener('click', () => stepYear(-1));
+    yearUp.addEventListener('click', () => stepYear(1));
 
     store.subscribe((s, prev) => {
         if (s.doc.meta !== prev.doc.meta) { renderPharmacies(); renderMonths(); }

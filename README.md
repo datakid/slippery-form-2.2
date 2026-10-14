@@ -6,11 +6,11 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 | Path | Purpose |
 |---|---|
 | `index.html` | The app |
-| `tests.html` | Self-test harness (55 checks). Backs up and restores your localStorage |
+| `tests.html` | Self-test harness (64 checks). Backs up and restores your localStorage |
 | `manifest.webmanifest` | Install metadata (uses `images/icon.jpg`) |
 
 ## Features
-- **Setup card**: find a pharmacy by code (`a21`) or Arabic name, or filter by class and region chips. There's a month grid (the likely month is suggested) and a year stepper. It collapses into the top pill once filled in.
+- **Setup card**: find a pharmacy by code (`a21`) or Arabic name, or filter by class and region chips. There's a month grid (the likely month is suggested) and a year field you can type straight into (Arabic digits work, Enter confirms, Esc reverts), with a stepper beside it. It collapses into the top pill once filled in.
 - **Composer (single flow)**: search, then Enter to select, type the quantity, Enter to add. Search forgives typos, normalises Arabic text, and fixes words typed on the Arabic keyboard layout by mistake.
   - `metformin 500*20` adds in one step (`x20` and `=20` also work)
   - `+5` / `-5` adjusts the last line you touched

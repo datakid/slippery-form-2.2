@@ -76,6 +76,13 @@ export function parseQty(value) {
     return parseInt(s, 10);
 }
 
+export function parseYear(value) {
+    const s = toLatinDigits(String(value ?? '')).trim();
+    if (!/^\d{4}$/.test(s)) return null;
+    const n = parseInt(s, 10);
+    return n >= 2000 && n <= 2099 ? n : null;
+}
+
 export function uid() {
     if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
     return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);

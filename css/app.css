@@ -286,7 +286,19 @@ kbd, .seg-kbd {
 
 .month-head { display: flex; align-items: center; justify-content: space-between; }
 .year-stepper { display: flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: var(--r-pill); padding: 2px; }
-.year-value { font-family: var(--font-mono); font-weight: 600; font-size: 14px; min-width: 46px; text-align: center; }
+.year-value {
+    width: 54px; height: 34px;
+    text-align: center;
+    font-family: var(--font-mono); font-weight: 600; font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    border-radius: var(--r-pill);
+    border: 1px solid transparent;
+    background: transparent;
+    outline: 0;
+    transition: all var(--t-fast);
+}
+.year-value:hover { border-color: var(--line-strong); }
+.year-value:focus { background: var(--surface); border-color: var(--accent); box-shadow: var(--ring); }
 .month-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .month-chip {
     height: 56px;
