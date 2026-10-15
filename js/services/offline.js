@@ -1,15 +1,19 @@
-export function registerOffline({ onReady } = {}) {
+export function registerOffline({ onReady, onUpdate } = {}) {
     if (!('serviceWorker' in navigator) || !document.querySelector('link[rel="manifest"]')) return;
+    const hadController = Boolean(navigator.serviceWorker.controller);
 
     function watch(worker) {
         if (!worker || !onReady) return;
         worker.addEventListener('statechange', () => { if (worker.state === 'activated') onReady(); });
     }
 
+    if (hadController && onUpdate) {
+        navigator.serviceWorker.addEventListener('controllerchange', () => onUpdate(), { once: true });
+    }
+
     function start() {
-        const firstVisit = !navigator.serviceWorker.controller;
         navigator.serviceWorker.register('sw.js')
-            .then(reg => { if (firstVisit) watch(reg.installing); })
+            .then(reg => { if (!hadController) watch(reg.installing); })
             .catch(err => console.warn('[offline] registration failed', err));
     }
 

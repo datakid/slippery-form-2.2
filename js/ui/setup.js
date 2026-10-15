@@ -3,14 +3,10 @@ import { t, label, getLang } from '../i18n.js';
 import { CLASSES, REGIONS, MONTHS, PHARMACIES, PHARMACY_BY_ID, pharmaciesFor } from '../data/catalog.js';
 import { createIndex, search } from '../lib/search.js';
 import { parseYear, toLatinDigits } from '../lib/text.js';
+import { suggestedPeriod } from '../lib/period.js';
 import { metaInfo } from '../core/selectors.js';
 
 const pharmacyIndex = createIndex(PHARMACIES, p => `${p.id} ${p.name}`);
-
-export function suggestedMonth() {
-    const d = new Date();
-    return d.getDate() <= 20 ? ((d.getMonth() + 11) % 12) + 1 : d.getMonth() + 1;
-}
 
 function gridColumns(items) {
     if (!items.length) return 1;
@@ -167,7 +163,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
 
     function renderMonths() {
         const m = meta();
-        const suggested = suggestedMonth();
+        const suggested = suggestedPeriod().month;
         clear(monthGrid);
         for (const mo of MONTHS) {
             const active = m.month === mo.n;

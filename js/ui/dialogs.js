@@ -2,6 +2,7 @@ import { h, icon, clear, kbd } from '../lib/dom.js';
 import { t, label, getLang } from '../i18n.js';
 import { openSheet, confirmSheet, openMenu, toast } from './overlay.js';
 import { analyzeFile } from '../services/importer.js';
+import { downloadBackup, parseBackup, storageStatus, requestPersistence, MAX_BACKUP_BYTES } from '../services/backup.js';
 import { makeLine } from '../core/state.js';
 import { metaInfo, totals } from '../core/selectors.js';
 import { CONTEXTS } from '../data/catalog.js';
@@ -185,6 +186,88 @@ export function openArchive({ store, actions }) {
     }
     draw();
     requestAnimationFrame(() => body.querySelector('.archive-row .btn:not(:disabled)')?.focus());
+}
+
+export function openBackup({ store, actions }) {
+    const fmt = new Intl.DateTimeFormat(getLang() === 'ar' ? 'ar-EG' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+    const summary = h('div', { class: 'finish-summary' });
+    const protect = h('div', { class: 'protect-row', hidden: true });
+    const fileInput = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    const downloadCard = h('button', { class: 'format-card is-action', type: 'button' },
+        icon('download', 22), h('strong', null, t('backupDownload')), h('small', null, t('backupDownloadHint')));
+    const restoreCard = h('button', { class: 'format-card is-action', type: 'button' },
+        icon('upload', 22), h('strong', null, t('restoreFrom')), h('small', null, t('restoreFromHint')));
+    const sheet = openSheet({
+        title: t('backupTitle'), size: 'sm',
+        body: h('div', { class: 'backup-body' },
+            h('p', { class: 'sheet-text' }, t('backupHint')),
+            summary,
+            protect,
+            h('div', { class: 'format-choice' }, downloadCard, restoreCard),
+            fileInput
+        )
+    });
+
+    function drawSummary() {
+        const s = store.getState();
+        const last = s.prefs.lastBackup;
+        clear(summary).append(
+            h('strong', null, t('backupOnDevice')),
+            h('span', null, `${t('lines', s.doc.lines.length)} · ${t('reports', s.archive.length)}`),
+            h('span', null, last ? t('backupLast', fmt.format(last)) : t('backupNever'))
+        );
+    }
+
+    async function drawProtect() {
+        const status = await storageStatus();
+        if (!status.supported || !sheet.dialog.isConnected) return;
+        const enable = status.persisted ? null : h('button', { class: 'btn btn-sm btn-tonal', type: 'button', onclick: async () => {
+            const ok = await requestPersistence();
+            if (!ok) toast(t('protectDenied'), { tone: 'danger', duration: 5000 });
+            drawProtect();
+        } }, t('protectEnable'));
+        protect.hidden = false;
+        clear(protect).append(
+            h('div', { class: 'protect-text' },
+                h('strong', null, t('protectTitle')),
+                h('span', null, status.persisted ? t('protectOn') : t('protectOff'))
+            ),
+            enable
+        );
+    }
+
+    downloadCard.addEventListener('click', () => {
+        const name = downloadBackup(store.getState());
+        store.dispatch({ type: 'PREFS_SET', payload: { lastBackup: Date.now() } });
+        actions.notify(t('backupSaved', name), 'success');
+        drawSummary();
+    });
+
+    restoreCard.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handle(fileInput.files[0]); });
+
+    async function handle(file) {
+        if (file.size > MAX_BACKUP_BYTES) { toast(t('restoreBadFile'), { tone: 'danger' }); return; }
+        let text;
+        try { text = await file.text(); }
+        catch (err) { console.error('[backup]', err); toast(t('importFailed'), { tone: 'danger' }); return; }
+        const res = parseBackup(text);
+        if (res.error) { toast(t(res.error === 'newer' ? 'restoreNewer' : 'restoreBadFile'), { tone: 'danger', duration: 6000 }); return; }
+        const s = store.getState();
+        const when = res.data.exportedAt ? fmt.format(res.data.exportedAt) : file.name;
+        const ok = await confirmSheet({
+            title: t('restoreConfirmTitle'),
+            body: t('restoreConfirmBody', s.doc.lines.length, s.archive.length, res.data.doc.lines.length, res.data.archive.length, when),
+            confirmLabel: t('restoreConfirm'), tone: 'danger'
+        });
+        if (!ok) return;
+        sheet.close();
+        actions.restoreState(res.data);
+    }
+
+    drawSummary();
+    drawProtect();
+    requestAnimationFrame(() => downloadCard.focus());
 }
 
 export function openFinish({ store, actions }) {

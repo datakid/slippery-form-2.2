@@ -1,9 +1,10 @@
 import { uid, normalize } from '../lib/text.js';
+import { suggestedPeriod } from '../lib/period.js';
 import { PRODUCT_MAP, PHARMACY_BY_ID, productKey } from '../data/catalog.js';
 
 export const SCHEMA_VERSION = 1;
 
-export function emptyMeta(year = new Date().getFullYear()) {
+export function emptyMeta(year = suggestedPeriod().year) {
     return { year, month: null, pharmacyId: null };
 }
 
@@ -150,6 +151,17 @@ function baseReducer(state, action) {
             if (payload.usage && typeof payload.usage === 'object') next.usage = payload.usage;
             if (!payload.doc.lines.some(l => l.id === state.ui.lastLineId)) next.ui = { ...state.ui, lastLineId: null };
             return next;
+        }
+        case 'STATE_RESTORE': {
+            if (!payload.doc) return state;
+            return {
+                ...state,
+                doc: payload.doc,
+                prefs: payload.prefs ? { ...state.prefs, ...payload.prefs } : state.prefs,
+                archive: Array.isArray(payload.archive) ? payload.archive : state.archive,
+                usage: payload.usage && typeof payload.usage === 'object' ? payload.usage : state.usage,
+                ui: { ...state.ui, lastLineId: null, filter: '', onlyNeedsContext: false }
+            };
         }
         case 'USAGE_BUMP': {
             const scope = payload.scope || '_';

@@ -1,8 +1,6 @@
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = `tally-shell-${VERSION}`;
-const FONT_CACHE = `tally-fonts-${VERSION}`;
 const NETWORK_TIMEOUT = 4000;
-const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com']);
 
 const SHELL = [
     './',
@@ -10,8 +8,23 @@ const SHELL = [
     'manifest.webmanifest',
     'favicon.svg',
     'css/app.css',
+    'css/fonts.css',
     'css/print.css',
     'css/tokens.css',
+    'fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-arabic-700-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-latin-400-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-latin-500-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-latin-600-normal.woff2',
+    'fonts/ibm-plex-sans-arabic-latin-700-normal.woff2',
+    'fonts/inter-latin-ext-wght-normal.woff2',
+    'fonts/inter-latin-wght-normal.woff2',
+    'fonts/jetbrains-mono-latin-500-normal.woff2',
+    'fonts/jetbrains-mono-latin-600-normal.woff2',
+    'fonts/newsreader-latin-ext-opsz-normal.woff2',
+    'fonts/newsreader-latin-opsz-normal.woff2',
     'images/apple-touch-icon.png',
     'images/icon-192.png',
     'images/icon-512.png',
@@ -25,8 +38,10 @@ const SHELL = [
     'js/data/catalog.js',
     'js/lib/dom.js',
     'js/lib/omni.js',
+    'js/lib/period.js',
     'js/lib/search.js',
     'js/lib/text.js',
+    'js/services/backup.js',
     'js/services/exporter.js',
     'js/services/importer.js',
     'js/services/offline.js',
@@ -74,17 +89,6 @@ async function shellResponse(event, key) {
     return hit || res || network;
 }
 
-async function fontResponse(event) {
-    const cache = await caches.open(FONT_CACHE);
-    const hit = await cache.match(event.request);
-    const network = fetch(event.request).then(res => {
-        if (res.ok || res.type === 'opaque') cache.put(event.request, res.clone());
-        return res;
-    });
-    event.waitUntil(network.catch(() => {}));
-    return hit || network;
-}
-
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(SHELL_CACHE)
@@ -98,7 +102,7 @@ self.addEventListener('activate', event => {
         caches.keys()
             .then(names => Promise.all(
                 names
-                    .filter(name => name.startsWith('tally-') && name !== SHELL_CACHE && name !== FONT_CACHE)
+                    .filter(name => name.startsWith('tally-') && name !== SHELL_CACHE)
                     .map(name => caches.delete(name))
             ))
             .then(() => self.clients.claim())
@@ -110,10 +114,7 @@ self.addEventListener('fetch', event => {
     if (req.method !== 'GET') return;
     if (req.cache === 'only-if-cached' && req.mode !== 'same-origin') return;
     const url = new URL(req.url);
-    if (url.origin === self.location.origin) {
-        const key = keyOf(url);
-        if (SHELL_KEYS.has(key)) event.respondWith(shellResponse(event, key));
-        return;
-    }
-    if (FONT_HOSTS.has(url.hostname)) event.respondWith(fontResponse(event));
+    if (url.origin !== self.location.origin) return;
+    const key = keyOf(url);
+    if (SHELL_KEYS.has(key)) event.respondWith(shellResponse(event, key));
 });

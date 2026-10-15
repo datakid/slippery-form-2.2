@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Tally — self tests</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/app.css">
 <style>
@@ -198,6 +199,15 @@ check('rtl applied', document.documentElement.dir === 'rtl' && document.getEleme
 T.dispatch({ type: 'PREFS_SET', payload: { lang: 'en' } });
 
 const { debounce, parseYear } = await import('./js/lib/text.js');
+const { suggestedPeriod } = await import('./js/lib/period.js');
+const { emptyMeta } = await import('./js/core/state.js');
+const sp = (y, m, d) => suggestedPeriod(new Date(y, m - 1, d));
+check('period: early January points at December of the previous year', sp(2027, 1, 5).year === 2026 && sp(2027, 1, 5).month === 12, sp(2027, 1, 5));
+check('period: late January is January of the same year', sp(2027, 1, 21).year === 2027 && sp(2027, 1, 21).month === 1, sp(2027, 1, 21));
+check('period: early February is January of the same year', sp(2027, 2, 3).year === 2027 && sp(2027, 2, 3).month === 1, sp(2027, 2, 3));
+check('period: mid October is September of the same year', sp(2026, 10, 14).year === 2026 && sp(2026, 10, 14).month === 9, sp(2026, 10, 14));
+check('period: day 20 still counts as early and day 21 does not', sp(2026, 6, 20).month === 5 && sp(2026, 6, 21).month === 6);
+check('new reports default to the suggested year', emptyMeta().year === suggestedPeriod().year);
 check('parseYear accepts latin and arabic digits', parseYear('2027') === 2027 && parseYear('٢٠٢٧') === 2027 && parseYear(' 2031 ') === 2031);
 check('parseYear rejects short, long, non-numeric and out-of-range', ['27', '20277', 'abcd', '1999', '2100', ''].every(v => parseYear(v) === null));
 let calls = 0;
@@ -315,6 +325,65 @@ key(document.getElementById('pharmacy-finder'), 'Escape');
 await wait(40);
 check('Esc closes a complete setup', document.getElementById('setup-panel').hidden);
 
+const { buildBackup, parseBackup, backupFilename, storageStatus } = await import('./js/services/backup.js');
+T.dispatch({ type: 'ARCHIVE_ADD', payload: { entry: { id: 'arch-1', finishedAt: Date.now(), file: 'x.csv', doc: T.state().doc } } });
+const bk = buildBackup(T.state());
+check('backup carries the whole state and no device-only prefs', bk.app === 'tally' && bk.doc.lines.length === T.state().doc.lines.length && bk.archive.length === 1 && !('lastBackup' in bk.prefs), Object.keys(bk));
+const round = parseBackup(JSON.stringify(bk));
+check('backup round-trips', round.data && round.data.doc.lines.length === bk.doc.lines.length && round.data.archive.length === 1 && round.data.doc.meta.year === bk.doc.meta.year);
+check('backup rejects files that are not Tally backups', ['not json', '{}', '[]', 'null', JSON.stringify({ app: 'other', kind: 'backup', v: 1, doc: {} }), JSON.stringify({ ...bk, v: undefined })].every(x => parseBackup(x).error === 'format'));
+check('backup rejects newer versions', parseBackup(JSON.stringify({ ...bk, v: 99 })).error === 'newer');
+const evil = parseBackup('{"app":"tally","kind":"backup","v":1,"doc":{"lines":[]},"usage":{"__proto__":{"polluted":{"x":1}}},"archive":[]}');
+check('backup cannot pollute prototypes', evil.data && ({}).polluted === undefined && Object.getPrototypeOf(evil.data.usage) === Object.prototype);
+check('backup file name carries the date', backupFilename(new Date(2027, 0, 5)) === 'tally-backup_2027-01-05.json');
+const ss = await storageStatus();
+check('storage status reports support and protection', typeof ss.supported === 'boolean' && typeof ss.persisted === 'boolean');
+
+document.getElementById('more-btn').click();
+await wait(80);
+[...document.querySelectorAll('.menu-item')].find(b => b.textContent.includes('Backup & restore')).click();
+await wait(150);
+const dlg = document.querySelector('dialog[open]');
+check('backup dialog opens from the More menu', !!dlg?.querySelector('.backup-body'));
+check('backup dialog summarises what is on this device', dlg.querySelector('.finish-summary').textContent.includes('No backup downloaded yet'), dlg.querySelector('.finish-summary')?.textContent);
+
+let captured = null;
+const realCreate = URL.createObjectURL.bind(URL);
+URL.createObjectURL = blob => { captured = blob; return realCreate(blob); };
+dlg.querySelectorAll('.format-card')[0].click();
+await wait(80);
+URL.createObjectURL = realCreate;
+const savedText = captured ? await captured.text() : '';
+check('download saves a parseable backup and records the time', !!parseBackup(savedText).data && typeof T.state().prefs.lastBackup === 'number');
+check('summary shows the last backup after downloading', !dlg.querySelector('.finish-summary').textContent.includes('No backup downloaded yet'));
+
+const fileInput = dlg.querySelector('input[type=file]');
+function pick(text) {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], 'pick.json', { type: 'application/json' }));
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
+const yearBefore = T.state().doc.meta.year;
+pick('hello, not a backup');
+await wait(200);
+check('a non-backup file is rejected with a message and nothing changes', [...document.querySelectorAll('.toast-text')].some(n => n.textContent === 'That file is not a Tally backup.') && T.state().doc.meta.year === yearBefore && T.state().archive.length === 1);
+
+const target = JSON.parse(savedText);
+target.doc.meta.year = 2033;
+target.doc.lines = target.doc.lines.slice(0, 1);
+target.archive = [];
+pick(JSON.stringify(target));
+await wait(250);
+const confirmButton = [...document.querySelectorAll('dialog[open] .btn-danger')].pop();
+check('restore asks for confirmation before replacing anything', !!confirmButton && T.state().doc.meta.year === yearBefore);
+confirmButton.click();
+await wait(500);
+check('restore replaces the report and the archive', T.state().doc.meta.year === 2033 && T.state().doc.lines.length === 1 && T.state().archive.length === 0, [T.state().doc.meta.year, T.state().doc.lines.length, T.state().archive.length]);
+check('restore is saved straight away and clears undo history', JSON.parse(localStorage.getItem('tally:v1')).doc.meta.year === 2033 && !T.store.canUndo());
+check('restore closes its dialogs', !document.querySelector('dialog[open]'));
+T.dispatch({ type: 'META_SET', payload: { year: yr } });
+
 const XLSX = await T.loadXLSX();
 check('xlsx lib loads lazily', !!XLSX?.utils);
 
@@ -329,6 +398,13 @@ const loaded = performance.getEntriesByType('resource')
     .map(u => u.pathname);
 const uncached = [...new Set(loaded)].filter(p => !shellKeys.has(p));
 check('everything the app loads is in the offline shell', loaded.length > 20 && uncached.length === 0, uncached);
+
+const indexHtml = await (await fetch('index.html')).text();
+const external = [...indexHtml.matchAll(/<(?:link|script)\b[^>]*\b(?:href|src)="(https?:[^"]+)"/g)].map(m => m[1]);
+check('the page pulls nothing from other hosts', external.length === 0, external);
+const fontsCss = await (await fetch('css/fonts.css')).text();
+const fontFiles = [...fontsCss.matchAll(/url\('\.\.\/([^']+)'\)/g)].map(m => m[1]);
+check('every font file is bundled and in the offline shell', fontFiles.length >= 10 && fontFiles.every(f => shellList.includes(f)), fontFiles.filter(f => !shellList.includes(f)));
 
 const manifest = await (await fetch('manifest.webmanifest')).json();
 const iconChecks = await Promise.all(manifest.icons.filter(i => i.sizes !== 'any').map(i => new Promise(resolve => {

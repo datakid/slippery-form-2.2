@@ -884,6 +884,14 @@ dialog .toast-host[popover] { bottom: calc(24px + env(safe-area-inset-bottom)); 
 .format-card small { font-size: 12.5px; color: var(--text-3); }
 .format-card.is-active { border-color: var(--accent); background: var(--accent-softer); }
 .format-card.is-active .icon { color: var(--accent); }
+.format-card.is-action:hover { border-color: var(--accent); background: var(--accent-softer); }
+.format-card.is-action:hover .icon { color: var(--accent); }
+.backup-body { display: flex; flex-direction: column; gap: 10px; }
+.backup-body .sheet-text { margin: 0; }
+.protect-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line); }
+.protect-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.protect-text strong { font-size: 14px; }
+.protect-text span { font-size: 13px; color: var(--text-2); }
 
 .print-sheet { display: none; }
 

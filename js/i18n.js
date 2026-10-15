@@ -59,6 +59,8 @@ const STRINGS = {
         catalogNoneFilled: 'No catalogue items in this report yet.',
         syncedTab: 'Updated from another tab.',
         offlineReady: 'Ready to work offline.',
+        updateReady: 'A new version of Tally is ready.',
+        reload: 'Reload',
         reports: n => n === 1 ? '1 report' : `${n} reports`,
         archiveDeleted: n => `Deleted ${n} from archive`,
         openNow: 'Open now',
@@ -96,6 +98,25 @@ const STRINGS = {
         cancel: 'Cancel', confirm: 'Confirm', close: 'Close',
         savedLocally: 'Saved on this device', saveFailed: 'Storage is full — export soon!',
         migrated: 'Picked up your report from the previous app.',
+        backupTitle: 'Backup & restore',
+        backupHint: 'Your reports live only in this browser. Download a backup to keep them safe or to move them to another device.',
+        backupOnDevice: 'On this device',
+        backupLast: d => `Last backup: ${d}`,
+        backupNever: 'No backup downloaded yet',
+        backupDownload: 'Download backup', backupDownloadHint: 'Report, archive and preferences',
+        restoreFrom: 'Restore from a file', restoreFromHint: 'Replaces what is here now',
+        restoreConfirmTitle: 'Replace current data?',
+        restoreConfirmBody: (cl, cr, nl, nr, d) => `This replaces your current report (${t('lines', cl)}) and archive (${t('reports', cr)}) with the backup from ${d} (${t('lines', nl)}, ${t('reports', nr)}). It cannot be undone.`,
+        restoreConfirm: 'Restore',
+        backupSaved: n => `Backup saved: ${n}`,
+        restored: 'Backup restored.',
+        restoreBadFile: 'That file is not a Tally backup.',
+        restoreNewer: 'This backup was made by a newer version of Tally.',
+        protectTitle: 'Protection from automatic clearing',
+        protectOn: 'On — the browser will not clear your data on its own.',
+        protectOff: 'Off — the browser may clear data when the device is low on space.',
+        protectEnable: 'Turn on',
+        protectDenied: 'The browser declined. Installing the app usually allows it.',
         shortcuts: 'Shortcuts',
         tipsTitle: 'Fast entry',
         tips: [
@@ -106,7 +127,7 @@ const STRINGS = {
             ['a21', 'Switch pharmacy by code'],
             ['!name @10 T #c *3', 'New item with unit, context and qty'],
             ['#c #j #m #l', 'Committee · Court · Medical · In list'],
-            ['/', 'Commands — print, export, full list…']
+            ['/', 'Commands — print, export, backup, full list…']
         ],
         keysTitle: 'Keys',
         keys: [
@@ -129,7 +150,7 @@ const STRINGS = {
         cmd: {
             print: 'Print report', csv: 'Export CSV', xlsx: 'Export Excel', finish: 'Finish report',
             full: 'Toggle full list', clear: 'Clear report', theme: 'Cycle theme', lang: 'Switch language',
-            archive: 'Open archive', import: 'Import spreadsheet', help: 'Shortcuts & tips', setup: 'Change pharmacy / month'
+            archive: 'Open archive', backup: 'Backup & restore', import: 'Import spreadsheet', help: 'Shortcuts & tips', setup: 'Change pharmacy / month'
         },
         total: 'Total',
         items: n => `${n} items`
@@ -194,6 +215,8 @@ const STRINGS = {
         catalogNoneFilled: 'لا توجد أصناف من القائمة في البيان بعد.',
         syncedTab: 'تم التحديث من تبويب آخر.',
         offlineReady: 'جاهز للعمل بدون إنترنت.',
+        updateReady: 'يتوفر إصدار جديد من تالي.',
+        reload: 'إعادة التحميل',
         reports: n => `${n} بيان`,
         archiveDeleted: n => `تم حذف ${n} من الأرشيف`,
         openNow: 'مفتوح الآن',
@@ -231,6 +254,25 @@ const STRINGS = {
         cancel: 'إلغاء', confirm: 'تأكيد', close: 'إغلاق',
         savedLocally: 'محفوظ على هذا الجهاز', saveFailed: 'التخزين ممتلئ — صدّر قريبًا!',
         migrated: 'تم استرجاع بيانك من التطبيق السابق.',
+        backupTitle: 'النسخ الاحتياطي والاستعادة',
+        backupHint: 'بياناتك محفوظة في هذا المتصفح فقط. نزّل نسخة احتياطية لحفظها بأمان أو لنقلها إلى جهاز آخر.',
+        backupOnDevice: 'على هذا الجهاز',
+        backupLast: d => `آخر نسخة: ${d}`,
+        backupNever: 'لم تُنزَّل نسخة احتياطية بعد',
+        backupDownload: 'تنزيل نسخة احتياطية', backupDownloadHint: 'البيان والأرشيف والتفضيلات',
+        restoreFrom: 'استعادة من ملف', restoreFromHint: 'تستبدل ما هو موجود الآن',
+        restoreConfirmTitle: 'استبدال البيانات الحالية؟',
+        restoreConfirmBody: (cl, cr, nl, nr, d) => `سيتم استبدال البيان الحالي (${t('lines', cl)}) والأرشيف (${t('reports', cr)}) بالنسخة المؤرخة ${d} (${t('lines', nl)}، ${t('reports', nr)}). لا يمكن التراجع عن ذلك.`,
+        restoreConfirm: 'استعادة',
+        backupSaved: n => `تم حفظ النسخة: ${n}`,
+        restored: 'تمت استعادة النسخة الاحتياطية.',
+        restoreBadFile: 'هذا الملف ليس نسخة احتياطية من تالي.',
+        restoreNewer: 'هذه النسخة أُنشئت بإصدار أحدث من تالي.',
+        protectTitle: 'الحماية من المسح التلقائي',
+        protectOn: 'مفعّلة — لن يمسح المتصفح بياناتك تلقائيًا.',
+        protectOff: 'غير مفعّلة — قد يمسح المتصفح البيانات عند امتلاء مساحة الجهاز.',
+        protectEnable: 'تفعيل',
+        protectDenied: 'رفض المتصفح الطلب. تثبيت التطبيق يسمح بذلك غالبًا.',
         shortcuts: 'الاختصارات',
         tipsTitle: 'إدخال سريع',
         tips: [
@@ -241,7 +283,7 @@ const STRINGS = {
             ['a21', 'تغيير الصيدلية بالكود'],
             ['!name @10 T #c *3', 'صنف جديد بعبوة وسياق وكمية'],
             ['#c #j #m #l', 'لجنة · حكم · شئون طبية · داخل اللستة'],
-            ['/', 'الأوامر — طباعة، تصدير، القائمة الكاملة…']
+            ['/', 'الأوامر — طباعة، تصدير، نسخ احتياطي، القائمة الكاملة…']
         ],
         keysTitle: 'المفاتيح',
         keys: [
@@ -264,7 +306,7 @@ const STRINGS = {
         cmd: {
             print: 'طباعة البيان', csv: 'تصدير CSV', xlsx: 'تصدير Excel', finish: 'إنهاء البيان',
             full: 'القائمة الكاملة', clear: 'مسح البيان', theme: 'تغيير المظهر', lang: 'تغيير اللغة',
-            archive: 'فتح الأرشيف', import: 'استيراد ملف', help: 'الاختصارات', setup: 'تغيير الصيدلية / الشهر'
+            archive: 'فتح الأرشيف', backup: 'نسخ احتياطي واستعادة', import: 'استيراد ملف', help: 'الاختصارات', setup: 'تغيير الصيدلية / الشهر'
         },
         total: 'الإجمالي',
         items: n => `${n} صنف`

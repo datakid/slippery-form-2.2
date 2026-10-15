@@ -7,36 +7,19 @@ import * as storage from './core/storage.js';
 import { exportCSV, exportXLSX, toRows, toCSV } from './services/exporter.js';
 import { loadXLSX } from './services/xlsx-loader.js';
 import { registerOffline } from './services/offline.js';
+import { requestPersistence } from './services/backup.js';
 import { toast, confirmSheet, openMenu, closeMenu, initTooltips } from './ui/overlay.js';
-import { createSetup, suggestedMonth } from './ui/setup.js';
+import { createSetup } from './ui/setup.js';
 import { createComposer } from './ui/composer.js';
 import { createLedger } from './ui/ledger.js';
 import { createCatalogView } from './ui/catalog-view.js';
 import { createPrintSheet } from './ui/print.js';
-import { openHelp, openImport, openArchive, openFinish } from './ui/dialogs.js';
+import { openHelp, openImport, openArchive, openBackup, openFinish } from './ui/dialogs.js';
 import { debounce } from './lib/text.js';
+import { suggestedPeriod } from './lib/period.js';
 import { PRODUCTS, PHARMACIES } from './data/catalog.js';
 
-const THEMES = ['system', 'light', 'dark'];
-const SORTS = ['recent', 'name', 'qty'];
-
-function sanitizeDoc(doc) {
-    if (!doc || typeof doc !== 'object') return null;
-    const meta = doc.meta && typeof doc.meta === 'object' ? { ...doc.meta } : {};
-    if (!Number.isInteger(meta.year)) meta.year = parseInt(meta.year, 10) || new Date().getFullYear();
-    const lines = (Array.isArray(doc.lines) ? doc.lines : [])
-        .filter(l => l && typeof l.name === 'string' && l.name.trim())
-        .map(l => ({ ...l, qty: Math.max(0, Math.floor(Number(l.qty) || 0)), unit: String(l.unit || ''), addedAt: l.addedAt || Date.now() }));
-    return { ...doc, id: doc.id || emptyDoc().id, meta, lines };
-}
-
-function sanitizePrefs(prefs) {
-    const out = { ...prefs };
-    if (!THEMES.includes(out.theme)) out.theme = 'system';
-    if (!SORTS.includes(out.sort)) out.sort = 'recent';
-    if (out.lang !== 'ar') out.lang = 'en';
-    return out;
-}
+const { THEMES, sanitizeDoc, sanitizePrefs, sanitizeArchive, sanitizeUsage } = storage;
 
 function boot() {
     const base = initialState();
@@ -47,9 +30,9 @@ function boot() {
     if (loaded.data?.prefs) base.prefs = { ...base.prefs, ...loaded.data.prefs };
     else base.prefs = { ...base.prefs, ...Object.fromEntries(Object.entries(legacyPrefs).filter(([, v]) => v)) };
     base.prefs = sanitizePrefs(base.prefs);
-    if (Array.isArray(loaded.data?.archive)) base.archive = loaded.data.archive.filter(a => a && a.id && a.doc).map(a => ({ ...a, doc: sanitizeDoc(a.doc) }));
-    if (loaded.data?.usage && typeof loaded.data.usage === 'object') base.usage = loaded.data.usage;
-    if (!base.doc.meta.month) base.doc.meta.month = suggestedMonth();
+    if (Array.isArray(loaded.data?.archive)) base.archive = sanitizeArchive(loaded.data.archive);
+    if (loaded.data?.usage) base.usage = sanitizeUsage(loaded.data.usage);
+    if (!base.doc.meta.month) base.doc.meta.month = suggestedPeriod().month;
     return { state: base, migrated: loaded.migrated };
 }
 
@@ -159,6 +142,17 @@ const actions = {
         setupOpen = false;
         renderShell();
         composer.focus();
+    },
+    restoreState(data) {
+        store.dispatch({ type: 'STATE_RESTORE', payload: data, meta: { skipHistory: true } });
+        store.clearHistory();
+        setupOpen = !metaInfo(store.getState().doc.meta).complete;
+        composer.reset({ keepFocus: false });
+        persistSoon.cancel();
+        persistNow();
+        renderShell();
+        setup.syncFromMeta();
+        notify(t('restored'), 'success');
     },
     currentDocId: () => store.getState().doc.id
 };
@@ -278,6 +272,7 @@ const commands = () => [
     { id: 'redo', icon: 'redo', label: () => t('redo'), kbd: 'Ctrl Shift Z', run: doRedo },
     { id: 'import', icon: 'upload', label: () => t('cmd.import'), run: () => openImport({ store, actions }) },
     { id: 'archive', icon: 'archive', label: () => t('cmd.archive'), run: () => openArchive({ store, actions }) },
+    { id: 'backup', icon: 'download', label: () => t('cmd.backup'), run: () => openBackup({ store, actions }) },
     { id: 'clear', icon: 'trash', label: () => t('cmd.clear'), run: clearReport },
     { id: 'theme', icon: 'moon', label: () => t('cmd.theme'), run: cycleTheme },
     { id: 'lang', icon: 'globe', label: () => t('cmd.lang'), run: toggleLang },
@@ -351,6 +346,7 @@ moreBtn.addEventListener('click', () => {
     openMenu(moreBtn, [
         { label: t('importFile'), icon: 'upload', run: () => openImport({ store, actions }) },
         { label: t('archive'), icon: 'archive', hint: store.getState().archive.length ? t('reports', store.getState().archive.length) : null, run: () => openArchive({ store, actions }) },
+        { label: t('backupTitle'), icon: 'download', run: () => openBackup({ store, actions }) },
         { label: store.getState().ui.view === 'catalog' ? t('viewLines') : t('viewCatalog'), icon: 'list', run: () => setView(store.getState().ui.view === 'catalog' ? 'ledger' : 'catalog') },
         '-',
         { heading: t('theme') },
@@ -561,7 +557,11 @@ if (migrated) {
     persistNow();
 }
 saveState.at = Date.now();
-registerOffline({ onReady: () => notify(t('offlineReady'), 'success', { duration: 5000 }) });
+registerOffline({
+    onReady: () => notify(t('offlineReady'), 'success', { duration: 5000 }),
+    onUpdate: () => notify(t('updateReady'), 'neutral', { duration: 20000, action: { label: t('reload'), run: () => location.reload() } })
+});
+if (matchMedia('(display-mode: standalone)').matches) requestPersistence();
 
 globalThis.tally = {
     store,

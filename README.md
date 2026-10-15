@@ -6,9 +6,11 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 | Path | Purpose |
 |---|---|
 | `index.html` | The app |
-| `tests.html` | Self-test harness (77 checks). Backs up and restores your localStorage |
+| `tests.html` | Self-test harness (101 checks). Backs up and restores your localStorage |
 | `manifest.webmanifest` | Install metadata (192/512 icons, maskable icon) |
 | `sw.js` | Offline service worker (app-shell cache) |
+| `scripts/run-tests.mjs` | Runs the harness headless; exits 1 on any failure |
+| `.github/workflows/tests.yml` | Runs that script on every push and pull request |
 
 ## Features
 - **Setup card**: find a pharmacy by code (`a21`) or Arabic name, or filter by class and region chips. There's a month grid (the likely month is suggested) and a year field you can type straight into (Arabic digits work, Enter confirms, Esc reverts), with a stepper beside it. It collapses into the top pill once filled in.
@@ -31,28 +33,31 @@ A rebuild of the "تذاكر الخارجي" pharmacy report tool. It's one flow
 - **Print**: A4 Arabic report with numbered rows, totals and a signature block.
 - EN/AR with full RTL, System/Light/Dark themes, and a mobile bottom-sheet layout.
 - Data from the previous apps (`bayan:v3:*` and `lx_b`) is picked up automatically.
-- **Offline and installable**: after the first visit the app opens and works with no connection, including XLSX export, and can be installed from the browser. When online every file is fetched fresh, so updates show on the next reload. The cached copy is used only when the network is down or takes longer than 4 seconds. A one-time notice says when offline use is ready.
+- **Offline and installable**: after the first visit the app opens and works with no connection, including XLSX export, and can be installed from the browser. When online every file is fetched fresh, so updates show on the next reload. The cached copy is used only when the network is down or takes longer than 4 seconds. A one-time notice says when offline use is ready, and another offers a reload when a new version has been installed.
+- **Backup and restore**: More menu → Backup and restore. Downloads one JSON file with the current report, archive, preferences and usage, and restores from one after a confirmation. Files from newer versions or with the wrong shape are refused, and restore replaces the current data in one step. The same dialog shows whether the browser has promised not to clear the data and can ask for that promise (it is also requested automatically once the app is installed).
+- **No outside requests**: fonts (Inter, Newsreader, IBM Plex Sans Arabic, JetBrains Mono) are bundled in `fonts/` and the whole app works without any other host.
 - Several tabs open at once stay in sync without overwriting each other. Saved data is checked and cleaned on load.
 
 ## Architecture (ES modules, no build step)
 ```
 js/data/catalog.js      products (deduped, units normalised), pharmacies, months, contexts
-js/lib/                 text (normalise/digits/layout), search (ranked), omni parser, dom helpers
+js/lib/                 text (normalise/digits/layout/year), period (suggested month), search (ranked), omni parser, dom helpers
 js/core/store.js        dispatch/subscribe store, undo/redo with grouping, action log
 js/core/state.js        reducer + line model
 js/core/selectors.js    derived data (totals, visible lines, issues)
 js/core/storage.js      persist/load + legacy migration
-js/services/            exporter (CSV/XLSX), importer, lazy xlsx loader, offline registration
+js/services/            exporter (CSV/XLSX), importer, backup (save/restore file), lazy xlsx loader, offline registration
 js/ui/                  setup, composer, ledger, catalog-view, dialogs, overlay, print
 js/main.js              wiring, commands, shortcuts, debug API
-sw.js                   offline service worker (shell cache, font cache)
+sw.js                   offline service worker (shell cache)
+css/fonts.css, fonts/   bundled web fonts and their licences
 ```
 **Debugging:** open the console and use `tally.state()`, `tally.log()` (action history), `tally.rows()`, `tally.csv()`, `tally.undo()`, `tally.reset()`.
 
 ## Offline maintenance
 - Every file the app loads must be listed in `SHELL` inside `sw.js`. The self-test harness fails if a loaded file is missing from the list or a listed file does not exist.
-- Bump `VERSION` in `sw.js` only when the list's structure changes. Old caches are removed on activation.
-- Google Fonts are cached the first time they load online. A first-ever session that starts offline uses system fonts.
+- Bump `VERSION` in `sw.js` on each release. Open tabs then show the "new version" notice and old caches are removed. Skipping the bump never serves stale files, it only means open tabs don't get the notice.
+- Fonts are part of the shell, so a first-ever session that starts offline after one online visit looks identical to an online one.
 
 ## Icons
 Sources are `favicon.svg` (rounded) and `images/icon-maskable.svg` (full bleed). The PNGs in `images/` are rendered from them at 192, 512 (standard and maskable) and 180 (Apple touch).
@@ -60,11 +65,13 @@ Sources are `favicon.svg` (rounded) and `images/icon-maskable.svg` (full bleed).
 ## Not implemented
 - Cloud sync and multi-device sharing (everything stays in this browser).
 
+## Running the checks
+Open `tests.html` through any static server, or run `npm install --no-save playwright` once and then `node scripts/run-tests.mjs`. Set `CHROMIUM_PATH` to use an existing Chromium. GitHub Actions does the same on every push.
+
 ## Next steps
-- Backup and restore of the whole local state, plus a request for persistent storage.
-- Self-host the fonts so a first offline session looks identical.
-- Run the self-test harness automatically on every push.
-- Fix the January month suggestion so it points at December of the previous year.
+- Add a visible "last backed up" nudge in the status bar when the data has changed and no backup was made for a while.
+- Cover the new-version notice and the restore flow with a second browser context in the harness.
+- Optional sync (file or cloud) for people who use more than one device.
 
 ## Data model
 Stored in localStorage key `tally:v1`: `{ v, doc: { id, meta: { year, month, pharmacyId }, lines: [{ id, name, unit, qty, custom, context, addedAt, updatedAt }] }, prefs, archive, usage }`.

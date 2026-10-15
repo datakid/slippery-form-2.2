@@ -1,7 +1,44 @@
 import { SCHEMA_VERSION, emptyDoc, emptyMeta, makeLine } from './state.js';
+import { suggestedPeriod } from '../lib/period.js';
 import { PHARMACIES, MONTHS, PRODUCT_ALIASES, PRODUCT_MAP, productKey, CONTEXTS } from '../data/catalog.js';
 
 export const KEY = 'tally:v1';
+export const THEMES = ['system', 'light', 'dark'];
+export const SORTS = ['recent', 'name', 'qty'];
+
+export function sanitizeDoc(doc) {
+    if (!doc || typeof doc !== 'object') return null;
+    const meta = doc.meta && typeof doc.meta === 'object' ? { ...doc.meta } : {};
+    if (!Number.isInteger(meta.year)) meta.year = parseInt(meta.year, 10) || suggestedPeriod().year;
+    const lines = (Array.isArray(doc.lines) ? doc.lines : [])
+        .filter(l => l && typeof l.name === 'string' && l.name.trim())
+        .map(l => ({ ...l, qty: Math.max(0, Math.floor(Number(l.qty) || 0)), unit: String(l.unit || ''), addedAt: l.addedAt || Date.now() }));
+    return { ...doc, id: doc.id || emptyDoc().id, meta, lines };
+}
+
+export function sanitizePrefs(prefs) {
+    const out = { ...prefs };
+    if (!THEMES.includes(out.theme)) out.theme = 'system';
+    if (!SORTS.includes(out.sort)) out.sort = 'recent';
+    if (out.lang !== 'ar') out.lang = 'en';
+    return out;
+}
+
+export function sanitizeArchive(list) {
+    return (Array.isArray(list) ? list : [])
+        .filter(a => a && a.id && a.doc)
+        .map(a => ({ ...a, doc: sanitizeDoc(a.doc) }))
+        .filter(a => a.doc);
+}
+
+export function sanitizeUsage(usage) {
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return {};
+    return Object.fromEntries(Object.entries(usage)
+        .filter(([, bucket]) => bucket && typeof bucket === 'object' && !Array.isArray(bucket))
+        .map(([scope, bucket]) => [scope, Object.fromEntries(Object.entries(bucket)
+            .filter(([, n]) => Number.isFinite(n) && n > 0)
+            .map(([key, n]) => [key, Math.floor(n)]))]));
+}
 
 function safeParse(raw) {
     try { return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -90,7 +127,7 @@ function migrateFolio() {
     const saved = safeParse(localStorage.getItem('lx_b'));
     if (!saved || !saved.state) return null;
     const s = saved.state;
-    const meta = emptyMeta(parseInt(s.year, 10) || new Date().getFullYear());
+    const meta = emptyMeta(parseInt(s.year, 10) || suggestedPeriod().year);
     const ph = PHARMACIES.find(p => p.name === s.pharmacy && (!s.class || p.cls === s.class));
     if (ph) meta.pharmacyId = ph.id;
     const m = MONTHS.find(x => x.en === s.month || x.ar === s.month);
