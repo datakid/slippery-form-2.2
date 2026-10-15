@@ -168,6 +168,7 @@ kbd, .seg-kbd {
 
 .setup { padding: 22px 24px 24px; animation: rise var(--t-slow) var(--ease); }
 .setup-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
+.setup-done { margin-inline-start: auto; flex-shrink: 0; }
 .step-badge {
     width: 30px; height: 30px; flex-shrink: 0;
     display: grid; place-items: center;

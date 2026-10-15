@@ -52,6 +52,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     const yearStepper = h('div', { class: 'year-stepper' }, yearDown, yearValue, yearUp);
     const yearError = h('p', { class: 'field-error', id: 'year-error', role: 'alert', hidden: true });
     const title = h('h2', { class: 'setup-title', id: 'setup-title' });
+    const doneBtn = h('button', { class: 'btn btn-sm btn-tonal setup-done', type: 'button', hidden: true, onclick: () => onDismiss && onDismiss() });
     const hint = h('p', { class: 'setup-hint' });
     const pharmacyLabel = h('span', { class: 'field-label' });
     const monthLabel = h('span', { class: 'field-label' });
@@ -59,7 +60,8 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     root.append(
         h('div', { class: 'setup-head' },
             h('span', { class: 'step-badge' }, '1'),
-            h('div', null, title, hint)
+            h('div', null, title, hint),
+            doneBtn
         ),
         h('div', { class: 'setup-cols' },
             h('div', { class: 'setup-col' },
@@ -76,6 +78,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     );
 
     function meta() { return store.getState().doc.meta; }
+    function syncDone() { doneBtn.hidden = !metaInfo(meta()).complete; }
     function setMeta(patch, { close = true } = {}) {
         store.dispatch({ type: 'META_SET', payload: patch });
         if (close && metaInfo(meta()).complete && onComplete) onComplete();
@@ -182,6 +185,8 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     function render() {
         title.textContent = t('setupTitle');
         hint.textContent = t('setupHint');
+        doneBtn.textContent = t('done');
+        syncDone();
         pharmacyLabel.textContent = t('pharmacy');
         monthLabel.textContent = t('month');
         finder.placeholder = t('pharmacyFinderPh');
@@ -235,7 +240,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
             e.preventDefault();
             if (parseYear(yearValue.value) === null) { setYearError(true); yearValue.select(); return; }
             commitYear();
-            if (metaInfo(meta()).complete && onComplete) onComplete();
+            if (metaInfo(meta()).complete && onDismiss) onDismiss();
             if (!root.hidden) (meta().pharmacyId ? monthGrid.querySelector('.is-active, .is-suggested, button') : finder).focus();
         } else if (e.key === 'Escape' && yearValue.value !== String(meta().year)) {
             e.preventDefault(); e.stopPropagation();
@@ -248,7 +253,7 @@ export function createSetup({ store, onComplete, onDismiss, onPick }) {
     yearUp.addEventListener('click', () => stepYear(1));
 
     store.subscribe((s, prev) => {
-        if (s.doc.meta !== prev.doc.meta) { renderPharmacies(); renderMonths(); }
+        if (s.doc.meta !== prev.doc.meta) { renderPharmacies(); renderMonths(); syncDone(); }
     });
 
     return {

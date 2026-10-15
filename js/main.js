@@ -247,6 +247,7 @@ function setView(view) {
 }
 
 function openSetup() {
+    setupKeep = metaInfo(store.getState().doc.meta).complete;
     setupOpen = true;
     renderShell();
     setup.syncFromMeta();
@@ -280,10 +281,11 @@ const commands = () => [
 ];
 
 let setupOpen = !metaInfo(store.getState().doc.meta).complete;
+let setupKeep = false;
 
 const setup = createSetup({
     store,
-    onComplete: () => { if (setupOpen) closeSetup(); },
+    onComplete: () => { if (setupOpen && !setupKeep) closeSetup(); },
     onDismiss: () => closeSetup(),
     onPick: (p, before) => { if (before && store.getState().doc.lines.length) notify(t('movedReport', p.name), 'success', { action: undoAction() }); }
 });
@@ -440,6 +442,7 @@ function renderChrome() {
 
 function renderShell() {
     const s = store.getState();
+    if (!setupOpen) setupKeep = false;
     setup.el.hidden = !setupOpen;
     const catalogMode = s.ui.view === 'catalog';
     ledger.el.hidden = catalogMode;
@@ -466,8 +469,8 @@ store.subscribe((s, prev, action) => {
     if (s.prefs.lang !== prev.prefs.lang) { setLang(s.prefs.lang); renderAll(); }
     if (s.prefs.theme !== prev.prefs.theme) { applyTheme(); renderChrome(); }
     if (s.doc !== prev.doc || s.ui.view !== prev.ui.view || action.type.startsWith('@@')) {
-        if (action.type.startsWith('@@') && s.doc.meta !== prev.doc.meta) setupOpen = !metaInfo(s.doc.meta).complete;
-        else if (s.doc.meta !== prev.doc.meta && !metaInfo(s.doc.meta).complete && !setupOpen) setupOpen = true;
+        if (action.type.startsWith('@@') && s.doc.meta !== prev.doc.meta) { setupOpen = !metaInfo(s.doc.meta).complete; setupKeep = false; }
+        else if (s.doc.meta !== prev.doc.meta && !metaInfo(s.doc.meta).complete) { setupKeep = false; if (!setupOpen) setupOpen = true; }
         renderShell();
     }
     if (action.type === 'REMOTE_SYNC') return;
